@@ -47,6 +47,7 @@ fun LyricsView(
     showTranslation: Boolean = true,
     positionFlow: StateFlow<Long>,
     isPlaying: Boolean,
+    isBuffering: Boolean = false,
     isVisible: Boolean,
     forcedLocateTrigger: Int = 0,
     onSeekToMs: (Long) -> Unit,
@@ -75,11 +76,9 @@ fun LyricsView(
     // 订阅位置流:collectAsState 建 State;displayPosition 只在面板 draw/derived
     // 阶段被读,按需写一次也只重算当前行,不触发本 Composable 重组。
     val positionState = positionFlow.collectAsState()
-    // 初值取当前流值而非 0:否则面板首次出现时会先按"位置 0"高亮第一行/吸顶,
-    // 等锚点被采样纠正后才跳回真实行。按需唤醒把纠错窗口拉长到最多 1s, 这个初值
-    // 尤为重要。
-    val displayPosition = remember { mutableLongStateOf(positionState.value) }
-    val anchor = remember {
+    // 歌词变了（换歌）必须以新歌的当前进度重构状态，不可沿用上一首歌残留的高位 displayPosition
+    val displayPosition = remember(lyrics) { mutableLongStateOf(positionState.value) }
+    val anchor = remember(lyrics) {
         PositionAnchor().apply {
             anchorPosMs = positionState.value
             anchorNanos = System.nanoTime()
@@ -94,16 +93,31 @@ fun LyricsView(
         snapshotFlow { positionState.value }.collect { pos ->
             anchor.anchorPosMs = pos
             anchor.anchorNanos = System.nanoTime()
+            // 关键：若采样位置回退（切歌、倒退 seek、循环重播）或发生大步跳跃，
+            // 立即强行对齐 displayPosition，彻底消除高位旧值锁死歌词的 Bug。
+            if (pos < displayPosition.longValue || kotlin.math.abs(pos - displayPosition.longValue) > 1000L) {
+                displayPosition.longValue = pos
+            }
         }
     }
 
-    // 按需外推:播放且可见时,睡到"下一行时间戳"再写一次 displayPosition,而不是
-    // 每帧轮询。withFrameNanos 会持续请求帧回调,歌词常驻时等于让渲染管线一直
-    // 60fps 空转;改为按需唤醒后,静态时零状态写入、零帧调度,只在跨行瞬间动一下。
-    // 2Hz 采样会把锚点重置回真实值,所以外推误差不会累积。暂停/隐藏即停。
-    LaunchedEffect(isPlaying, isVisible, timestamps) {
-        if (!isPlaying || !isVisible) {
+    // 外部强制定位（如切歌展开、歌词面板滑出）
+    LaunchedEffect(forcedLocateTrigger) {
+        if (forcedLocateTrigger != 0) {
             displayPosition.longValue = positionState.value
+            anchor.anchorPosMs = positionState.value
+            anchor.anchorNanos = System.nanoTime()
+        }
+    }
+
+    // 按需外推:播放、未缓冲且可见时,睡到"下一行时间戳"再写一次 displayPosition,而不是
+    // 每帧轮询。缓冲中（isBuffering）必须停掉外推，否则墙钟空转会导致歌词比音频提前数秒。
+    // 2Hz 采样会把锚点重置回真实值,所以外推误差不会累积。暂停/隐藏即停。
+    LaunchedEffect(isPlaying, isBuffering, isVisible, timestamps) {
+        if (!isPlaying || isBuffering || !isVisible) {
+            displayPosition.longValue = positionState.value
+            anchor.anchorPosMs = positionState.value
+            anchor.anchorNanos = System.nanoTime()
             return@LaunchedEffect
         }
         while (true) {
@@ -121,7 +135,7 @@ fun LyricsView(
             val extrapolated =
                 anchor.anchorPosMs + (System.nanoTime() - anchor.anchorNanos) / 1_000_000L
             // 只在真正越过该边界时写,长间隔里不会每秒写一次状态。
-            if (extrapolated >= next && extrapolated > displayPosition.longValue) {
+            if (extrapolated >= next && extrapolated >= displayPosition.longValue) {
                 displayPosition.longValue = extrapolated
             }
         }

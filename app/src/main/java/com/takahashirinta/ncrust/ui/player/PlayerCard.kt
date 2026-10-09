@@ -38,8 +38,10 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.Coil
 import coil.compose.AsyncImagePainter
@@ -52,6 +54,8 @@ import com.takahashirinta.ncrust.ui.i18n.LocalStrings
 import com.takahashirinta.ncrust.ui.viewmodel.PlayerViewModel
 import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouTweens
 import io.github.takahashirinta.kanesumi.controls.MetroDivider
+import io.github.takahashirinta.kanesumi.controls.MetroDropdownMenu
+import io.github.takahashirinta.kanesumi.controls.MetroDropdownMenuItem
 import io.github.takahashirinta.kanesumi.controls.MetroIconButton
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroTypography
@@ -80,9 +84,11 @@ fun PlayerCard(
     onRemoveFromQueue: (Int) -> Unit = {},
     onPlayFromQueue: (Int) -> Unit = {},
     onMoveInQueue: (Int, Int) -> Unit = { _, _ -> },
-    onTogglePlayMode: () -> Unit = {},
+    onSetPlayMode: (Int) -> Unit = {},
     onPlayNothing: () -> Unit = {},
     onSongInfoClick: () -> Unit = {},
+    onOpenArtist: () -> Unit = {},
+    onOpenAlbum: () -> Unit = {},
     onClearQueue: () -> Unit = {},
     onSavePlaylist: () -> Unit = {},
     onNavigateToUser: () -> Unit = {}
@@ -92,6 +98,8 @@ fun PlayerCard(
     // lyricsReady 到位后由下方的 LaunchedEffect 自动切回歌词视图。
     var showLyrics by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
+    // 歌词视图里的小封面点开「歌手 / 专辑」，不把整张封面做成按钮。
+    var coverMenuExpanded by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -224,24 +232,20 @@ fun PlayerCard(
         when {
             showLyrics -> {
                 // 与封面缩小并行
-                launch { lyricAnimProgress.animateTo(1f, tween(190, easing = FastOutSlowInEasing)) }
+                launch { lyricAnimProgress.animateTo(1f, SokuouTweens.QuickSwitch) }
                 // 若当前 queueSlideProgress > 0（来自列表模式），横滑回歌词位置
                 if (queueSlideProgress.value > 0.01f) {
-                    queueSlideProgress.animateTo(
-                        0f, tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                    )
+                    queueSlideProgress.animateTo(0f, SokuouTweens.SheetDismiss)
                 }
             }
             showQueue -> {
-                launch { lyricAnimProgress.animateTo(1f, tween(190, easing = FastOutSlowInEasing)) }
+                launch { lyricAnimProgress.animateTo(1f, SokuouTweens.QuickSwitch) }
                 when {
                     // 已在列表位置（或正在返回），无需再动
                     queueSlideProgress.value > 0.99f -> {}
                     // 来自稳定歌词模式（lyricAnimProgress 已是 1）→ 横滑
                     lyricAnimProgress.value > 0.95f -> {
-                        queueSlideProgress.animateTo(
-                            1f, tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                        )
+                        queueSlideProgress.animateTo(1f, SokuouTweens.SheetDismiss)
                     }
                     // 来自大封面模式 → 不横滑，仅随封面缩小淡入
                     else -> queueSlideProgress.snapTo(1f)
@@ -249,7 +253,7 @@ fun PlayerCard(
             }
             else -> {
                 // 切回大封面：等封面展开完成，内容随 lyricAnimProgress 自然淡出
-                lyricAnimProgress.animateTo(0f, tween(300, easing = LinearOutSlowInEasing))
+                lyricAnimProgress.animateTo(0f, SokuouTweens.SheetAppear)
                 // 封面展开后重置滑动位置，为下次 b→c 准备
                 queueSlideProgress.snapTo(0f)
             }
@@ -289,7 +293,7 @@ fun PlayerCard(
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Main)
+                        val event = awaitPointerEvent(PointerEventPass.Final)
                         if (progress.value > 0.99f) {
                             val pos = event.changes.firstOrNull()?.position
                             if (pos == null || !isOverPanel(pos.y, pos.x)) {
@@ -306,8 +310,10 @@ fun PlayerCard(
                 if (!hasSong) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    // 面板内纵向手势完全交给内部 LazyColumn/进度条,根节点不消费任何事件。
-                    if (isOverPanel(down.position.y, down.position.x)) return@awaitEachGesture
+                    // 面板内的纵向手势交给内部 LazyColumn/进度条；横向仍要留下，
+                    // 否则歌词页无法横滑切到队列。折叠态没有面板可切，整段让出。
+                    val startedOverPanel = isOverPanel(down.position.y, down.position.x)
+                    if (startedOverPanel && progress.value <= 0.9f) return@awaitEachGesture
                     val startProgress = progress.value
                     val pointer = down.id
                     val slop = viewConfiguration.touchSlop
@@ -315,20 +321,66 @@ fun PlayerCard(
                     // awaitVerticalTouchSlopOrCancellation 一旦看到事件被消费就返回 null——
                     // miniBar 的 clickable 会消费 down/事件, 导致拖拽永远起不来
                     // ("滑动拉起"失效)。这里越界后再 consume, 之后正常 drag。
-                    var acc = 0f
+                    var accY = 0f
+                    var accX = 0f
                     var dragging = false
+                    // 展开态横向滑动切歌词 ↔ 队列，封面/顶栏和面板内都认。
+                    // 纵向仍归整卡拖拽；面板内的纵向让给列表滚动。
+                    var horizontal = false
+                    // 面板内的横向判定要快过 LazyColumn 的纵向滚动抢手势，
+                    // 否则列表先把事件消费掉，横滑永远到不了阈值。
+                    val horizontalSlop = if (startedOverPanel) slop / 2f else slop
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == pointer } ?: break
                         if (!change.pressed) break
-                        acc += change.position.y - change.previousPosition.y
-                        if (abs(acc) > slop) {
+                        accY += change.position.y - change.previousPosition.y
+                        accX += change.position.x - change.previousPosition.x
+                        if (abs(accY) > slop || abs(accX) > horizontalSlop) {
+                            // 展开态才认横向：折叠态没有歌词/队列可切，横滑不该吞掉点击。
+                            horizontal = progress.value > 0.9f && abs(accX) > horizontalSlop && abs(accX) > abs(accY)
+                            // 面板内起手又判成纵向：整段让给列表滚动，不消费。
+                            if (startedOverPanel && !horizontal) return@awaitEachGesture
                             dragging = true
                             change.consume()
                             break
                         }
                     }
                     if (!dragging) return@awaitEachGesture
+                    if (horizontal) {
+                        var totalX = accX
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointer } ?: break
+                            if (!change.pressed) break
+                            change.consume()
+                            totalX += change.position.x - change.previousPosition.x
+                        }
+                        // 48dp：比点按宽，比翻页窄。
+                        // 左滑 封面→歌词→队列；右滑 队列→歌词→封面。一次只走一页。
+                        val threshold = 48.dp.toPx()
+                        if (abs(totalX) > threshold) {
+                            if (totalX < 0f) {
+                                when {
+                                    showQueue -> {}
+                                    showLyrics -> {
+                                        showQueue = true
+                                        showLyrics = false
+                                    }
+                                    else -> showLyrics = true
+                                }
+                            } else {
+                                when {
+                                    showQueue -> {
+                                        showQueue = false
+                                        showLyrics = true
+                                    }
+                                    showLyrics -> showLyrics = false
+                                }
+                            }
+                        }
+                        return@awaitEachGesture
+                    }
                     // 手动拖动循环：同样忽略消费标志读位移, 边拖边 consume
                     // （压制 miniBar clickable 的按压, 让它不会在抬手时误触发展开）。
                     while (true) {
@@ -338,6 +390,7 @@ fun PlayerCard(
                         change.consume()
                         val dragAmount = change.position.y - change.previousPosition.y
                         if (dragAmount != 0f) {
+                            // pointerInput 作用域禁止直接调 snapTo，只能 launch。
                             coroutineScope.launch {
                                 progress.snapTo(
                                     (progress.value - dragAmount / totalDragDistancePx).coerceIn(0f, 1f)
@@ -351,12 +404,19 @@ fun PlayerCard(
                         } else {
                             if (progress.value >= 0.75f) 1f else 0f
                         }
+                        val remaining = kotlin.math.abs(target - progress.value)
                         progress.animateTo(
                             target,
                             if (target == 1f)
-                                tween(durationMillis = 400, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                                tween(
+                                    durationMillis = (400 * remaining).roundToInt().coerceIn(120, 400),
+                                    easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+                                )
                             else
-                                tween(durationMillis = 260, easing = FastOutSlowInEasing)
+                                tween(
+                                    durationMillis = (260 * remaining).roundToInt().coerceIn(90, 260),
+                                    easing = FastOutSlowInEasing
+                                )
                         )
                     }
                 }
@@ -474,12 +534,14 @@ fun PlayerCard(
                                 animationSpec = SokuouTweens.CoverFade,
                                 label = "LyricsCrossfade"
                             ) { _ ->
+                                val isBuffering by playerViewModel.isBuffering.collectAsState()
                                 LyricsView(
                                     lyrics = lyrics,
                                     translatedLyrics = translatedLyrics,
                                     showTranslation = showLyricsTranslation,
                                     positionFlow = playerViewModel.currentPosition,
                                     isPlaying = isPlaying,
+                                    isBuffering = isBuffering,
                                     isVisible = showLyrics,
                                     forcedLocateTrigger = lyricLocateTrigger,
                                     onSeekToMs = { ms -> playerViewModel.seekTo(ms) },
@@ -518,19 +580,44 @@ fun PlayerCard(
                                     style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
                                     modifier = Modifier.weight(1f)
                                 )
-                                MetroIconButton(onClick = onTogglePlayMode) {
-                                    MetroIcon(
-                                        imageVector = when (playMode) {
-                                            QueueModes.SINGLE -> Icons.Default.RepeatOne
-                                            QueueModes.SHUFFLE -> Icons.Default.Shuffle
-                                            QueueModes.LINE -> Icons.Default.PlaylistPlay
-                                            QueueModes.INFINITY -> Icons.Default.AllInclusive
-                                            else -> Icons.Default.Repeat
-                                        },
-                                        contentDescription = strings.playModeButton,
-                                        tint = if (playMode != QueueModes.CYCLE) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
-                                        sizeDp = 24.dp
-                                    )
+                                // 点一下弹出五档直选：循环点五下才转到想要的模式是最常见的误操作。
+                                var modeMenuOpen by remember { mutableStateOf(false) }
+                                Box {
+                                    MetroIconButton(onClick = { modeMenuOpen = true }) {
+                                        MetroIcon(
+                                            imageVector = playModeIcon(playMode),
+                                            contentDescription = strings.playModeButton,
+                                            tint = if (playMode != QueueModes.CYCLE) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
+                                            sizeDp = 24.dp
+                                        )
+                                    }
+                                    MetroDropdownMenu(
+                                        expanded = modeMenuOpen,
+                                        onDismissRequest = { modeMenuOpen = false },
+                                        alignment = Alignment.TopEnd,
+                                        maxWidthDp = 240.dp
+                                    ) {
+                                        PlayModeOption(QueueModes.CYCLE, strings.playModeCycle, playMode) {
+                                            modeMenuOpen = false
+                                            onSetPlayMode(it)
+                                        }
+                                        PlayModeOption(QueueModes.SINGLE, strings.playModeSingle, playMode) {
+                                            modeMenuOpen = false
+                                            onSetPlayMode(it)
+                                        }
+                                        PlayModeOption(QueueModes.SHUFFLE, strings.playModeShuffle, playMode) {
+                                            modeMenuOpen = false
+                                            onSetPlayMode(it)
+                                        }
+                                        PlayModeOption(QueueModes.LINE, strings.playModeLine, playMode) {
+                                            modeMenuOpen = false
+                                            onSetPlayMode(it)
+                                        }
+                                        PlayModeOption(QueueModes.INFINITY, strings.playModeInfinity, playMode) {
+                                            modeMenuOpen = false
+                                            onSetPlayMode(it)
+                                        }
+                                    }
                                 }
                                 MetroIconButton(onClick = onSavePlaylist) {
                                     MetroIcon(
@@ -836,8 +923,17 @@ fun PlayerCard(
         // 窄屏大图=整屏宽居中；宽屏大图=左栏封面区实测中心与尺寸。
         if (hasSong) {
             val s = song!!
+            // 折叠态封面只占 56dp，但这里一直按整屏宽解码 1080。点单曲展开的那
+            // 400ms 里，大图解码和封面缩放挤在同一帧，120Hz 下直接掉到 150ms+。
+            // 折叠时请求小图（列表预取已在内存里），展开过半再换大图，解码落在
+            // 动画后半段、用户已经看到封面在动的时候。
+            val coverUrl = if (progress.value < 0.5f) {
+                CoverUrls.small(s.album?.picUrl)
+            } else {
+                CoverUrls.large(s.album?.picUrl)
+            }
             StableCover(
-                model = CoverUrls.large(s.album?.picUrl),
+                model = coverUrl,
                 contentDescription = null,
                 placeholderColor = LocalMetroColors.current.surfaceVariant,
                 modifier = Modifier
@@ -868,6 +964,42 @@ fun PlayerCard(
                     },
                 contentScale = ContentScale.Crop
             )
+            // 小封面是纯 graphicsLayer 位移，本身没有布局槽，点击热区按它的落点另画。
+            // 只在歌词视图（封面缩进顶栏）打开，大封面和迷你条不受影响。
+            if (lyricAnimProgress.value > 0.5f && progress.value > 0.9f && !isWidePlayer) {
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (miniCoverCenterX - miniCoverHalfPx).roundToInt(),
+                                (miniCoverCenterY - miniCoverHalfPx).roundToInt()
+                            )
+                        }
+                        .size(56.dp)
+                        .clickable { coverMenuExpanded = true }
+                ) {
+                    MetroDropdownMenu(
+                        expanded = coverMenuExpanded,
+                        onDismissRequest = { coverMenuExpanded = false },
+                        alignment = Alignment.BottomStart
+                    ) {
+                        MetroDropdownMenuItem(
+                            text = strings.actionGoToArtist,
+                            onClick = { coverMenuExpanded = false; onOpenArtist() },
+                            leading = {
+                                MetroIcon(Icons.Default.Person, null, tint = LocalMetroColors.current.onSurface, sizeDp = 20.dp)
+                            }
+                        )
+                        MetroDropdownMenuItem(
+                            text = strings.actionGoToAlbum,
+                            onClick = { coverMenuExpanded = false; onOpenAlbum() },
+                            leading = {
+                                MetroIcon(Icons.Default.Album, null, tint = LocalMetroColors.current.onSurface, sizeDp = 20.dp)
+                            }
+                        )
+                    }
+                }
+            }
         }
 
         // 收起按钮叠加层：z 序最高，保证触摸事件不被任何下层元素拦截
@@ -893,6 +1025,38 @@ fun PlayerCard(
 
 // 新封面超过该阈值仍未就绪，才退化为纯色占位（"实在不出来再禁用"）。
 private const val COVER_HOLD_MS = 400L
+
+private fun playModeIcon(mode: Int) = when (mode) {
+    QueueModes.SINGLE -> Icons.Default.RepeatOne
+    QueueModes.SHUFFLE -> Icons.Default.Shuffle
+    QueueModes.LINE -> Icons.Default.PlaylistPlay
+    QueueModes.INFINITY -> Icons.Default.AllInclusive
+    else -> Icons.Default.Repeat
+}
+
+/** 播放模式菜单的一项：当前档用主题色标出并带图标，点选即切。 */
+@Composable
+private fun PlayModeOption(
+    mode: Int,
+    label: String,
+    current: Int,
+    onPick: (Int) -> Unit,
+) {
+    val selected = mode == current
+    MetroDropdownMenuItem(
+        text = label,
+        onClick = { onPick(mode) },
+        textColor = if (selected) LocalMetroColors.current.primary else LocalMetroColors.current.onSurface,
+        leading = {
+            MetroIcon(
+                imageVector = playModeIcon(mode),
+                contentDescription = null,
+                tint = if (selected) LocalMetroColors.current.primary else LocalMetroColors.current.onSurface,
+                sizeDp = 20.dp
+            )
+        }
+    )
+}
 
 /**
  * 切歌不闪的封面。Coil 的 [AsyncImagePainter] 在 model 变化时先进入 loading 态、

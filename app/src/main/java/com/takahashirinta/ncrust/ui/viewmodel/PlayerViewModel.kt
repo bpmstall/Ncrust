@@ -149,6 +149,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 currentSongName.value = now.title
                 currentSongArtist.value = now.artist
                 currentSongArtwork.value = now.artwork.ifEmpty { null }
+                currentPosition.value = 0L
+                progress.value = 0f
                 // 音质档位同样取自当前 MediaItem 的 extras，与标题/封面同源，
                 // 因此三者绝不会互相错位（旧的全局预载槽推断正是错位来源）。
                 if (now.actualLevel.isNotEmpty()) {
@@ -264,6 +266,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         latestPlaySongId = songId
         needsPreload.value = false
         refreshGaplessSetting()
+        // 切歌立即重置进度，避免上一首的高位进度（如 3:20）残留在新歌里导致歌词定位错乱/冻结
+        currentPosition.value = 0L
+        progress.value = 0f
 
         val prefs = getApplication<Application>().getSharedPreferences("ncrust_settings", 0)
         val selectedQuality = if (quality.isNotEmpty()) quality
