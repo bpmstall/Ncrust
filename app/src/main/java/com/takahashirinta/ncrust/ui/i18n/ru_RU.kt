@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val ruRU = Strings(
     tabHome = "Главная",
@@ -55,6 +55,7 @@ val ruRU = Strings(
     categoryTracks = "Треки",
     categoryAlbums = "Альбомы",
     categoryPlaylists = "Плейлисты",
+    categoryHistory = "Недавние",
     noSavedSongs = "Нет сохранённых треков",
     noSavedAlbums = "Нет сохранённых альбомов",
     noPlaylists = "Нет плейлистов",
@@ -102,6 +103,12 @@ val ruRU = Strings(
     scanFailed = "Не удалось: войдите и подключитесь к той же Wi-Fi сети",
     scanConnecting = "Подключение к планшету…",
     clearQueue = "Очистить очередь",
+    playModeCycle = "Повтор списка",
+    playModeSingle = "Повтор одного",
+    playModeShuffle = "Перемешать",
+    playModeLine = "По порядку",
+    playModeInfinity = "Похожее радио",
+    playModeHeartbeat = "Режим сердца",
     actionAddToPlaylist = "Добавить в плейлист",
     actionRemoveFromLibrary = "Удалить из библиотеки",
     actionSaveAlbum = "Сохранить альбом",
@@ -114,6 +121,7 @@ val ruRU = Strings(
     playNowDesc = "Очистить текущую очередь и начать воспроизведение",
     insertNextTitle = "Следующим",
     insertNextDesc = "Играть сразу после текущего трека",
+    heartbeatDesc = "Рекомендовать дальше по любимым",
 
     aboutTitle = "О Ncrust",
     aboutAppSubtitle = "Неофициальный клиент NetEase Cloud Music",

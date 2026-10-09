@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val jpJP = Strings(
     tabHome = "ホーム",
@@ -55,6 +55,7 @@ val jpJP = Strings(
     categoryTracks = "楽曲",
     categoryAlbums = "アルバム",
     categoryPlaylists = "プレイリスト",
+    categoryHistory = "再生履歴",
     noSavedSongs = "保存された曲はありません",
     noSavedAlbums = "保存されたアルバムはありません",
     noPlaylists = "プレイリストはありません",
@@ -102,6 +103,12 @@ val jpJP = Strings(
     scanFailed = "失敗: ログイン済みか、同じWi-Fiに接続しているか確認してください",
     scanConnecting = "タブレットに接続中…",
     clearQueue = "キューを空にする",
+    playModeCycle = "リストリピート",
+    playModeSingle = "1曲リピート",
+    playModeShuffle = "シャッフル",
+    playModeLine = "順次再生",
+    playModeInfinity = "類似ラジオ",
+    playModeHeartbeat = "ハートビート",
     actionAddToPlaylist = "プレイリストに追加",
     actionRemoveFromLibrary = "ライブラリから削除",
     actionSaveAlbum = "アルバム全体を保存",
@@ -114,6 +121,7 @@ val jpJP = Strings(
     playNowDesc = "現在のキューをクリアして再生開始",
     insertNextTitle = "次に再生",
     insertNextDesc = "現在の曲の直後に再生",
+    heartbeatDesc = "お気に入りから先を推薦",
 
     aboutTitle = "Ncrustについて",
     aboutAppSubtitle = "NetEase Cloud Music 非公式クライアント",

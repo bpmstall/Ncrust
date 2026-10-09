@@ -40,6 +40,7 @@ object PlaybackStateManager {
     private const val JSON_FM_MODE = "fmMode"
     private const val JSON_SHUFFLED_INDICES = "shuffledIndices"
     private const val JSON_SHUFFLED_POSITION = "shuffledPosition"
+    private const val JSON_HEARTBEAT_PLAYLIST = "heartbeatPlaylistId"
 
     // android-v1.3.2 首版以混淆后的字段名落盘（queue→a、queueIndex→b、playMode→c、
     // fmMode→d、shuffledIndices→e、shuffledPosition→f）。读取时兼容一次，让升级
@@ -73,7 +74,8 @@ object PlaybackStateManager {
         val playMode: Int = 0,
         val fmMode: Boolean = false,
         val shuffledIndices: List<Int> = emptyList(),
-        val shuffledPosition: Int = 0
+        val shuffledPosition: Int = 0,
+        val heartbeatPlaylistId: Long? = null
     )
 
     // 会话写盘 debounce：连续 addToQueue / insertNext / removeFromQueue 会累计触发。
@@ -191,6 +193,7 @@ object PlaybackStateManager {
         // Int 列表序列化不依赖泛型信息（数字字面量自描述），可直接转。
         obj.add(JSON_SHUFFLED_INDICES, gson.toJsonTree(session.shuffledIndices))
         obj.addProperty(JSON_SHUFFLED_POSITION, session.shuffledPosition)
+        session.heartbeatPlaylistId?.let { obj.addProperty(JSON_HEARTBEAT_PLAYLIST, it) }
         return obj.toString()
     }
 
@@ -213,7 +216,8 @@ object PlaybackStateManager {
             playMode = pick(JSON_PLAY_MODE, LEGACY_PLAY_MODE)?.asInt ?: 0,
             fmMode = pick(JSON_FM_MODE, LEGACY_FM_MODE)?.asBoolean ?: false,
             shuffledIndices = shuffledIndices,
-            shuffledPosition = pick(JSON_SHUFFLED_POSITION, LEGACY_SHUFFLED_POSITION)?.asInt ?: 0
+            shuffledPosition = pick(JSON_SHUFFLED_POSITION, LEGACY_SHUFFLED_POSITION)?.asInt ?: 0,
+            heartbeatPlaylistId = obj.get(JSON_HEARTBEAT_PLAYLIST)?.takeUnless { it.isJsonNull }?.asLong
         )
     }
 

@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val zhCN = Strings(
     tabHome = "首页",
@@ -55,6 +55,7 @@ val zhCN = Strings(
     categoryTracks = "单曲",
     categoryAlbums = "专辑",
     categoryPlaylists = "歌单",
+    categoryHistory = "最近播放",
     noSavedSongs = "暂无收藏歌曲",
     noSavedAlbums = "暂无收藏专辑",
     noPlaylists = "暂无歌单",
@@ -102,6 +103,12 @@ val zhCN = Strings(
     scanFailed = "授权失败: 请确认已登录且两台设备在同一 Wi-Fi",
     scanConnecting = "正在连接平板…",
     clearQueue = "清空队列",
+    playModeCycle = "列表循环",
+    playModeSingle = "单曲循环",
+    playModeShuffle = "随机播放",
+    playModeLine = "顺序播放",
+    playModeInfinity = "相似无限",
+    playModeHeartbeat = "心动模式",
     actionAddToPlaylist = "加入播放列表",
     actionRemoveFromLibrary = "移除收藏",
     actionSaveAlbum = "收藏整张专辑",
@@ -114,6 +121,7 @@ val zhCN = Strings(
     playNowDesc = "清空当前队列并开始播放",
     insertNextTitle = "插播",
     insertNextDesc = "在当前曲目之后立即播放",
+    heartbeatDesc = "按红心歌单往下推荐",
 
     aboutTitle = "关于 Ncrust",
     aboutAppSubtitle = "网易云音乐第三方客户端",

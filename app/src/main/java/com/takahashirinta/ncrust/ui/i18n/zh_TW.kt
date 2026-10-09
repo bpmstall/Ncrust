@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val zhTW = Strings(
     tabHome = "首頁",
@@ -55,6 +55,7 @@ val zhTW = Strings(
     categoryTracks = "單曲",
     categoryAlbums = "專輯",
     categoryPlaylists = "歌單",
+    categoryHistory = "最近播放",
     noSavedSongs = "尚無藏曲",
     noSavedAlbums = "尚無藏碟",
     noPlaylists = "尚無歌單",
@@ -102,6 +103,12 @@ scanSuccess = "已授權, 平板將自動登入",
 scanFailed = "授權失敗: 請確認已登入且兩台裝置在同一 Wi-Fi",
 scanConnecting = "正在連接平板…",
     clearQueue = "清空佇列",
+    playModeCycle = "列表循環",
+    playModeSingle = "單曲循環",
+    playModeShuffle = "隨機播放",
+    playModeLine = "順序播放",
+    playModeInfinity = "相似無限",
+    playModeHeartbeat = "心動模式",
     actionAddToPlaylist = "入單",
     actionRemoveFromLibrary = "去藏",
     actionSaveAlbum = "藏全冊",
@@ -114,6 +121,7 @@ scanConnecting = "正在連接平板…",
     playNowDesc = "清空當前列而始奏",
     insertNextTitle = "徑接",
     insertNextDesc = "於本曲後即奏",
+    heartbeatDesc = "按紅心歌單往下推薦",
 
     aboutTitle = "關於 Ncrust",
     aboutAppSubtitle = "網易雲音樂第三方客戶端",

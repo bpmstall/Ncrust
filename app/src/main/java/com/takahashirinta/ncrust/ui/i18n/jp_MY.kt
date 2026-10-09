@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val jpMY = Strings(
     tabHome = "登布",
@@ -55,6 +55,7 @@ val jpMY = Strings(
     categoryTracks = "単曲",
     categoryAlbums = "音盤",
     categoryPlaylists = "曲目",
+    categoryHistory = "履歴",
     noSavedSongs = "無 保存 曲",
     noSavedAlbums = "無 保存 音盤",
     noPlaylists = "無 曲目",
@@ -102,6 +103,12 @@ val jpMY = Strings(
     scanFailed = "認 失敗 入 濟 同 Wi-Fi 確",
     scanConnecting = "平板 接続 中…",
     clearQueue = "キューを空にする",
+    playModeCycle = "列 反復",
+    playModeSingle = "一曲 反復",
+    playModeShuffle = "乱奏",
+    playModeLine = "順奏",
+    playModeInfinity = "類似 無限",
+    playModeHeartbeat = "心動",
     actionAddToPlaylist = "曲目 加",
     actionRemoveFromLibrary = "庫 除",
     actionSaveAlbum = "全冊 保",
@@ -114,6 +121,7 @@ val jpMY = Strings(
     playNowDesc = "列 空 奏 始",
     insertNextTitle = "次 挿",
     insertNextDesc = "現在曲 直後 奏",
+    heartbeatDesc = "紅心 列 先 薦",
 
     aboutTitle = "Ncrust 紹介",
     aboutAppSubtitle = "王易雲音楽 第三者 客",

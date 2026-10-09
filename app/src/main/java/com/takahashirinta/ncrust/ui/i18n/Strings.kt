@@ -62,6 +62,7 @@ data class Strings(
     val categoryTracks: String,
     val categoryAlbums: String,
     val categoryPlaylists: String,
+    val categoryHistory: String,
     val noSavedSongs: String,
     val noSavedAlbums: String,
     val noPlaylists: String,
@@ -119,6 +120,14 @@ data class Strings(
     val scanConnecting: String,
 
     val clearQueue: String,
+    // 播放模式五档的菜单文案（点模式按钮直接选，不再循环点五下）。
+    val playModeCycle: String,
+    val playModeSingle: String,
+    val playModeShuffle: String,
+    val playModeLine: String,
+    val playModeInfinity: String,
+    // 「我喜欢的音乐」播放全部时的第二选项：按红心歌单推荐，而不是按收藏顺序。
+    val playModeHeartbeat: String,
     val actionAddToPlaylist: String,
     val actionRemoveFromLibrary: String,
     val actionSaveAlbum: String,
@@ -133,6 +142,7 @@ data class Strings(
     val playNowDesc: String,
     val insertNextTitle: String,
     val insertNextDesc: String,
+    val heartbeatDesc: String,
 
     // About
     val aboutTitle: String,

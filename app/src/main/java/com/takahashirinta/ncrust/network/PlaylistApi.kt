@@ -341,6 +341,36 @@ object PlaylistApi {
         }
     }
 
+    /**
+     * 心动模式：以红心歌单为种子，按当前曲往下推荐（/api/playmode/intelligence/list）。
+     * 官方客户端在「我喜欢的音乐」里用它替代普通顺序播放。
+     * 返回 data[].song 嵌套；空列表表示未登录、歌单不匹配或接口失效，调用方自行兜底。
+     */
+    suspend fun getIntelligenceList(
+        songId: Long,
+        playlistId: Long,
+        startMusicId: Long = songId,
+        count: Int = 1
+    ): List<SongItem> = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("songId", songId.toString())
+            .put("type", "fromPlayOne")
+            .put("playlistId", playlistId.toString())
+            .put("startMusicId", startMusicId.toString())
+            .put("count", count.toString())
+            .toString()
+        val body = runCatching {
+            RetrofitClient.weapiPost("/api/playmode/intelligence/list", payload).body?.string()
+        }.getOrNull() ?: return@withContext emptyList()
+        val arr = runCatching { JSONObject(body).optJSONArray("data") }.getOrNull()
+            ?: return@withContext emptyList()
+        val songs = JSONArray()
+        for (i in 0 until arr.length()) {
+            arr.optJSONObject(i)?.optJSONObject("song")?.let { songs.put(it) }
+        }
+        if (songs.length() == 0) emptyList() else parseSimilarSongs(JSONObject().put("songs", songs).toString())
+    }
+
     // FM垃圾桶：对当前 FM 歌曲执行不喜欢操作
     suspend fun fmTrash(songId: Long): Boolean = withContext(Dispatchers.IO) {
         val response = RetrofitClient.eapiPost(
@@ -493,7 +523,23 @@ object PlaylistApi {
      * 账号里若有其它特殊歌单会读到错误的歌单，导致收藏页读到的单曲集合与 like 写入的目标不一致，
      * 表现为「收藏后隔天消失」。依次按名称、specialType==5、任意特殊歌单三级兜底。
      */
-    suspend fun getLikedPlaylistId(uid: Long): Long? = withContext(Dispatchers.IO) {
+    suspend fun getLikedPlaylistId(uid: Long): Long? = likedPlaylistIdCached(uid)
+
+    /** 进程内缓存：红心歌单 id 在一次登录会话里不变，播放全部不必每次再拉一遍歌单列表。 */
+    private var cachedLikedPlaylistUid: Long = -1L
+    private var cachedLikedPlaylistId: Long? = null
+
+    private suspend fun likedPlaylistIdCached(uid: Long): Long? = withContext(Dispatchers.IO) {
+        if (cachedLikedPlaylistUid == uid && cachedLikedPlaylistId != null) return@withContext cachedLikedPlaylistId
+        val id = fetchLikedPlaylistId(uid)
+        if (id != null) {
+            cachedLikedPlaylistUid = uid
+            cachedLikedPlaylistId = id
+        }
+        id
+    }
+
+    private suspend fun fetchLikedPlaylistId(uid: Long): Long? = withContext(Dispatchers.IO) {
         val payload = mapOf(
             "uid" to uid.toString(),
             "limit" to "200",

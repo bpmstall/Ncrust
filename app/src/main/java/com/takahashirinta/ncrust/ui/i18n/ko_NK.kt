@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val koNK = Strings(
     tabHome = "처음",
@@ -55,6 +55,7 @@ val koNK = Strings(
     categoryTracks = "단일곡",
     categoryAlbums = "음반",
     categoryPlaylists = "노래목록",
+    categoryHistory = "최근 재생",
     noSavedSongs = "저장한 곡 없음",
     noSavedAlbums = "저장한 음반 없음",
     noPlaylists = "노래목록 없음",
@@ -102,6 +103,12 @@ scanSuccess = "인증됨, 평판이 자동으로 로그인됩니다",
 scanFailed = "실패: 로그인 여부와 같은 Wi-Fi 연결을 확인하세요",
 scanConnecting = "평판에 연결중…",
     clearQueue = "대기열 비우기",
+    playModeCycle = "목록 반복",
+    playModeSingle = "한 곡 반복",
+    playModeShuffle = "임의 재생",
+    playModeLine = "순서대로",
+    playModeInfinity = "비슷한 곡 라디오",
+    playModeHeartbeat = "하트 모드",
     actionAddToPlaylist = "목록에 추가",
     actionRemoveFromLibrary = "저장소에서 삭제",
     actionSaveAlbum = "앨범 전체 저장",
@@ -114,6 +121,7 @@ scanConnecting = "평판에 연결중…",
     playNowDesc = "지금 대기열 비우고 재생 시작",
     insertNextTitle = "이어 틀기",
     insertNextDesc = "현재곡 바로 다음에 재생",
+    heartbeatDesc = "좋아요 곡 기준으로 이어서 추천",
 
     aboutTitle = "Ncrust 소개",
     aboutAppSubtitle = "넷이즈 클라우드 음악 비공식 클라이언트",

@@ -30,7 +30,8 @@ class PlaybackSessionStoreTest {
         playMode = 4,
         fmMode = true,
         shuffledIndices = listOf(2, 0, 1),
-        shuffledPosition = 1
+        shuffledPosition = 1,
+        heartbeatPlaylistId = 42L
     )
 
     @Test
@@ -53,6 +54,7 @@ class PlaybackSessionStoreTest {
         assertTrue(obj.has("fmMode"))
         assertTrue(obj.has("shuffledIndices"))
         assertTrue(obj.has("shuffledPosition"))
+        assertTrue(obj.has("heartbeatPlaylistId"))
         // PlaybackSession 未 keep，字段若被混淆（a~f）绝不能出现在落盘格式里。
         assertFalse(obj.has("a"))
     }
@@ -79,6 +81,7 @@ class PlaybackSessionStoreTest {
         assertEquals(true, parsed?.fmMode)
         assertEquals(listOf(1, 0), parsed?.shuffledIndices)
         assertEquals(1, parsed?.shuffledPosition)
+        assertEquals(null, parsed?.heartbeatPlaylistId)
     }
 
     @Test

@@ -42,6 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.takahashirinta.ncrust.library.LibraryManager
+import com.takahashirinta.ncrust.library.PlayHistoryManager
 import com.takahashirinta.ncrust.cache.ContentCache
 import com.takahashirinta.ncrust.network.PlaylistApi
 import com.takahashirinta.ncrust.network.RetrofitClient
@@ -354,7 +355,9 @@ fun MainScreen(
     var menuSong by remember { mutableStateOf<SongItem?>(null) }
     var menuSongActions by remember { mutableStateOf<List<SongMenuAction>>(emptyList()) }
 
-    var playbackQueue by remember { mutableStateOf<List<SongItem>>(emptyList()) }
+    // SnapshotStateList：追加/删除只通知增量，不换整个列表引用。
+    // 旧的 playbackQueue = playbackQueue + x 每次都复制整表并让 PlayerCard 整卡重组。
+    val playbackQueue = remember { mutableStateListOf<SongItem>() }
     var currentQueueIndex by remember { mutableIntStateOf(-1) }
     var songEnded by remember { mutableStateOf(false) }
     var songTransitioned by remember { mutableStateOf(false) }
@@ -365,6 +368,8 @@ fun MainScreen(
     // FM 电台入口(true) 与 相似无限播放模式(false) 共用 INFINITY 播放模式,
     // 但续播数据源不同: FM 继续拉私人 FM 流, 相似无限拉相似歌曲。
     var fmMode by remember { mutableStateOf(false) }
+    // 心动模式：红心歌单 id。非空时 INFINITY 续播改走 intelligence/list，而不是相似歌曲。
+    var heartbeatPlaylistId by remember { mutableStateOf<Long?>(null) }
 
     fun songParams(s: SongItem) = Triple(
         s.name,
@@ -391,7 +396,8 @@ fun MainScreen(
                 playMode = playMode,
                 fmMode = fmMode,
                 shuffledIndices = shuffledIndices,
-                shuffledPosition = shuffledPosition
+                shuffledPosition = shuffledPosition,
+                heartbeatPlaylistId = heartbeatPlaylistId
             )
         )
     }
@@ -400,11 +406,12 @@ fun MainScreen(
     LaunchedEffect(Unit) {
         val session = PlaybackStateManager.getSession(context) ?: return@LaunchedEffect
         if (session.queue.isEmpty()) return@LaunchedEffect
-        playbackQueue = session.queue.toMutableList()
+        playbackQueue.clear(); playbackQueue.addAll(session.queue)
         currentQueueIndex = session.queueIndex.coerceIn(0, playbackQueue.size - 1)
         playMode = session.playMode
         // FM 标记只在 INFINITY 模式下有意义，避免恢复出不一致的组合。
         fmMode = session.fmMode && session.playMode == QueueModes.INFINITY
+        heartbeatPlaylistId = session.heartbeatPlaylistId?.takeIf { session.playMode == QueueModes.INFINITY }
         // 乱序序列只在仍适配当前队列时沿用，否则按当前索引重建。
         shuffledIndices = session.shuffledIndices.filter { it in playbackQueue.indices }
         shuffledPosition = session.shuffledPosition
@@ -448,7 +455,7 @@ fun MainScreen(
     }
 
     fun removeFromQueue(index: Int) {
-        playbackQueue = playbackQueue.toMutableList().also { it.removeAt(index) }
+        playbackQueue.removeAt(index)
         if (currentQueueIndex >= playbackQueue.size) currentQueueIndex = playbackQueue.size - 1
         if (playbackQueue.isEmpty()) currentQueueIndex = -1
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
@@ -458,8 +465,8 @@ fun MainScreen(
     // 队列拖拽排序：移动后修正 currentQueueIndex（当前播放项跟随其歌曲移动）。
     fun moveInQueue(from: Int, to: Int) {
         if (from !in playbackQueue.indices || to !in playbackQueue.indices || from == to) return
-        val item = playbackQueue[from]
-        val newQueue = playbackQueue.toMutableList().apply { removeAt(from); add(to, item) }
+        val item = playbackQueue.removeAt(from)
+        playbackQueue.add(to, item)
         // 当前播放项的索引修正：歌曲本身移动了，索引跟随歌曲。
         currentQueueIndex = when {
             from == currentQueueIndex -> to
@@ -467,7 +474,6 @@ fun MainScreen(
             from > currentQueueIndex && to <= currentQueueIndex -> currentQueueIndex + 1
             else -> currentQueueIndex
         }
-        playbackQueue = newQueue
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
     }
@@ -478,6 +484,7 @@ fun MainScreen(
             val song = playbackQueue[index]
             val (title, artist, artwork) = songParams(song)
             playerViewModel.playSong(song.id, title = title, artist = artist, artworkUrl = artwork)
+            PlayHistoryManager.record(context, song)
             persistSession()
 
             // Immediately preload the next song so ExoPlayer has maximum time to buffer it.
@@ -522,8 +529,13 @@ fun MainScreen(
         val seed = playbackQueue.getOrNull(currentQueueIndex) ?: return
         val existingIds = playbackQueue.map { it.id }.toSet()
         val fromFm = fmMode
+        val heartbeatId = heartbeatPlaylistId
         infinityJob.value = coroutineScope.launch(Dispatchers.IO) {
-            val primary = if (fromFm) {
+            val primary = if (heartbeatId != null) {
+                runCatching {
+                    PlaylistApi.getIntelligenceList(seed.id, heartbeatId, seed.id)
+                }.getOrDefault(emptyList())
+            } else if (fromFm) {
                 // 私人 FM 流: 一次只返回一小批, 队尾再拉一次即无限续播电台。
                 runCatching { PlaylistApi.getPersonalFm() }.getOrDefault(emptyList())
             } else {
@@ -536,7 +548,7 @@ fun MainScreen(
                 }.getOrDefault(emptyList())
             if (continuation.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
-                playbackQueue = playbackQueue + continuation
+                playbackQueue.addAll(continuation)
                 val startIdx = playbackQueue.size - continuation.size
                 if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
                 playFromQueue(startIdx)
@@ -785,7 +797,7 @@ fun MainScreen(
         // 队列未在播放（空/无当前曲）时, 该曲作为唯一一首。
         val isQueued = playbackQueue.isNotEmpty() && currentQueueIndex in playbackQueue.indices
         if (!isQueued) {
-            playbackQueue = listOf(song)
+            playbackQueue.clear(); playbackQueue.add(song)
             currentQueueIndex = 0
             if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
             persistSession()
@@ -802,7 +814,7 @@ fun MainScreen(
             else -1
             val insertPos = (newCurrentIndex + 1).coerceIn(0, filtered.size)
             filtered.add(insertPos, song)
-            playbackQueue = filtered
+            playbackQueue.clear(); playbackQueue.addAll(filtered)
             currentQueueIndex = if (newCurrentIndex < 0) 0 else newCurrentIndex
             if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
             persistSession()
@@ -824,7 +836,7 @@ fun MainScreen(
         else -1
         val insertPos = (newCurrentIndex + 1).coerceIn(0, filtered.size)
         filtered.add(insertPos, song)
-        playbackQueue = filtered
+        playbackQueue.clear(); playbackQueue.addAll(filtered)
         currentQueueIndex = if (newCurrentIndex < 0) 0 else newCurrentIndex
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
@@ -833,8 +845,8 @@ fun MainScreen(
     fun appendToQueue(song: SongItem) {
         val currentId = playbackQueue.getOrNull(currentQueueIndex)?.id
         if (song.id == currentId) return
-        val filtered = playbackQueue.filter { it.id != song.id }
-        playbackQueue = filtered + song
+        playbackQueue.removeAll { it.id == song.id }
+        playbackQueue.add(song)
         currentQueueIndex = if (currentId != null)
             playbackQueue.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
         else 0
@@ -845,11 +857,45 @@ fun MainScreen(
     fun replaceQueueAndPlay(songs: List<SongItem>) {
         if (songs.isEmpty()) return
         fmMode = false
-        playbackQueue = songs
+        heartbeatPlaylistId = null
+        playbackQueue.clear(); playbackQueue.addAll(songs)
         currentQueueIndex = 0
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         playFromQueue(0)
         expandCard()
+    }
+
+    /**
+     * 「我喜欢的音乐」按歌单播放：先出已加载的部分，再后台补全红心歌单。
+     * 红心歌单详情要走网络，等全量再开播会让按钮点下去没反应。
+     */
+    fun playLikedPlaylist() {
+        val loaded = LibraryManager.getSavedSongs(context)
+        if (loaded.isNotEmpty()) replaceQueueAndPlay(loaded)
+        val likedIds = LibraryManager.getLikedSongIds(context)
+        if (likedIds.isEmpty() || likedIds.size == loaded.size) return
+        coroutineScope.launch(Dispatchers.IO) {
+            val songs = runCatching { PlaylistApi.getSongsByIds(likedIds) }.getOrNull()
+            if (!songs.isNullOrEmpty()) withContext(Dispatchers.Main) { replaceQueueAndPlay(songs) }
+        }
+    }
+
+    /**
+     * 心动模式：以红心歌单为种子开播，队尾用 intelligence/list 续推荐。
+     * 歌单 id 还没缓存时先按收藏顺序开播，id 到手再挂上续播，避免按钮点下去没反应。
+     */
+    fun playLikedHeartbeat() {
+        playLikedPlaylist()
+        playMode = QueueModes.INFINITY
+        coroutineScope.launch(Dispatchers.IO) {
+            val id = runCatching {
+                PlaylistApi.getLikedPlaylistId(PlaylistApi.getCurrentUserId())
+            }.getOrNull() ?: return@launch
+            withContext(Dispatchers.Main) {
+                heartbeatPlaylistId = id
+                persistSession()
+            }
+        }
     }
 
     /**
@@ -893,7 +939,7 @@ fun MainScreen(
         else 0
         val insertPos = (newCurrentIndex + 1).coerceIn(0, filtered.size)
         filtered.addAll(insertPos, toInsert)
-        playbackQueue = filtered
+        playbackQueue.clear(); playbackQueue.addAll(filtered)
         currentQueueIndex = newCurrentIndex
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
@@ -909,15 +955,18 @@ fun MainScreen(
         val newSongs = songs.filter { it.id !in existingIds }
         if (newSongs.isEmpty()) return
         // 尾追加不动 currentQueueIndex 前面的项，无需修正索引。
-        playbackQueue = playbackQueue + newSongs
+        playbackQueue.addAll(newSongs)
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
     }
 
-    // 切换播放模式：顺序循环 → 单曲 → 乱序 → 顺序线性 → 相似无限(FM)，循环。
-    val onTogglePlayMode: () -> Unit = {
+    // 播放模式直选（队列面板菜单）：顺序循环 / 单曲 / 乱序 / 顺序线性 / 相似无限(FM)。
+    fun onSetPlayMode(mode: Int) {
+        if (mode !in 0..4) return
+        // 电台标记只属于「我的电台」入口；从菜单切到相似无限只是播放模式，不标电台。
         fmMode = false
-        playMode = (playMode + 1) % 5
+        heartbeatPlaylistId = null
+        playMode = mode
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         else {
             shuffledIndices = emptyList()
@@ -999,7 +1048,7 @@ fun MainScreen(
                     }.getOrDefault(emptyList()).firstOrNull() ?: return@launch
                     withContext(Dispatchers.Main) {
                         currentSong = detail
-                        playbackQueue = listOf(detail)
+                        playbackQueue.clear(); playbackQueue.add(detail)
                         currentQueueIndex = 0
                         shuffledIndices = emptyList()
                         // 整会话原子落盘（队列+索引+模式+FM+乱序），而非只写队列两字段。
@@ -1159,7 +1208,7 @@ fun MainScreen(
             onRemoveFromQueue = { removeFromQueue(it) },
             onPlayFromQueue = { playFromQueue(it) },
             onMoveInQueue = ::moveInQueue,
-            onTogglePlayMode = onTogglePlayMode,
+            onSetPlayMode = { onSetPlayMode(it) },
             onPlayNothing = {
                 // 暂无播放 → 一键开始: 优先缓存里的每日推荐, 否则现拉
                 coroutineScope.launch(Dispatchers.IO) {
@@ -1173,7 +1222,7 @@ fun MainScreen(
             onClearQueue = {
                 // 显式清空: 停播 + 回到暂无播放态。进程重建保留队列是特性(接着听),
                 // 想清空时用户有明确入口, 不做隐式自动清空(打断连续收听习惯)。
-                playbackQueue = emptyList()
+                playbackQueue.clear()
                 currentQueueIndex = -1
                 currentSong = null
                 shuffledIndices = emptyList()
@@ -1186,6 +1235,8 @@ fun MainScreen(
                 // 全屏播放器点歌名: 上拉"转到歌手/转到专辑"菜单(复用长按菜单 sheet)
                 currentSong?.let { menuSong = it; menuSongActions = emptyList() }
             },
+            onOpenArtist = { currentSong?.let { resolveAndNavigate(it, toArtist = true) } },
+            onOpenAlbum = { currentSong?.let { resolveAndNavigate(it, toArtist = false) } },
             onSavePlaylist = { /* TODO: 保存歌单 */ },
             onNavigateToUser = {
                 selectedTab = 3
@@ -1268,6 +1319,8 @@ fun MainScreen(
 
                         1 -> LibraryScreen(
                             onSongClick = { playSongItem(it) },
+                            onPlayLikedPlaylist = { playLikedPlaylist() },
+                            onPlayLikedHeartbeat = { playLikedHeartbeat() },
                             onAlbumClick = { albumId -> navController.navigate(NavRoutes.album(albumId)) },
                             onPlayAlbum = { albumId ->
                                 val albumSongs = LibraryManager.getSongsByAlbumId(context, albumId)

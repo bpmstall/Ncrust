@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,7 +26,8 @@ fun PlayAllDialog(
     songCount: Int,
     onDismiss: () -> Unit,
     onReplaceAndPlay: () -> Unit,
-    onInsertNext: () -> Unit
+    onInsertNext: () -> Unit,
+    onHeartbeat: (() -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     MetroDialog(onDismissRequest = onDismiss) {
@@ -99,6 +101,37 @@ fun PlayAllDialog(
             }
         }
         MetroDivider()
+
+        if (onHeartbeat != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onHeartbeat(); onDismiss() }
+                    .padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MetroIcon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = LocalMetroColors.current.primary,
+                    sizeDp = 26.dp
+                )
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    MetroText(
+                        text = strings.playModeHeartbeat,
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    )
+                    MetroText(
+                        text = strings.heartbeatDesc,
+                        color = LocalMetroColors.current.onSurfaceVariant,
+                        style = TextStyle(fontSize = 12.sp)
+                    )
+                }
+            }
+            MetroDivider()
+        }
 
         Box(
             modifier = Modifier

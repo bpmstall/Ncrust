@@ -1,4 +1,4 @@
-﻿package com.takahashirinta.ncrust.ui.i18n
+package com.takahashirinta.ncrust.ui.i18n
 
 val deDE = Strings(
     tabHome = "Startseite",
@@ -55,6 +55,7 @@ val deDE = Strings(
     categoryTracks = "Titel",
     categoryAlbums = "Alben",
     categoryPlaylists = "Playlists",
+    categoryHistory = "Verlauf",
     noSavedSongs = "Keine gespeicherten Songs",
     noSavedAlbums = "Keine gespeicherten Alben",
     noPlaylists = "Keine Playlists",
@@ -102,6 +103,12 @@ val deDE = Strings(
     scanFailed = "Fehlgeschlagen: angemeldet und im selben WLAN?",
     scanConnecting = "Verbindung zum Tablet…",
     clearQueue = "Warteschlange leeren",
+    playModeCycle = "Liste wiederholen",
+    playModeSingle = "Titel wiederholen",
+    playModeShuffle = "Zufällig",
+    playModeLine = "Der Reihe nach",
+    playModeInfinity = "Ähnliches Radio",
+    playModeHeartbeat = "Herzmodus",
     actionAddToPlaylist = "Zur Playlist hinzufügen",
     actionRemoveFromLibrary = "Aus Bibliothek entfernen",
     actionSaveAlbum = "Album speichern",
@@ -114,6 +121,7 @@ val deDE = Strings(
     playNowDesc = "Aktuelle Warteschlange leeren und abspielen",
     insertNextTitle = "Als Nächstes abspielen",
     insertNextDesc = "Sofort nach dem aktuellen Titel abspielen",
+    heartbeatDesc = "Weiterempfehlen anhand der Favoriten",
 
     aboutTitle = "Über Ncrust",
     aboutAppSubtitle = "Inoffizieller NetEase Cloud Music Client",
