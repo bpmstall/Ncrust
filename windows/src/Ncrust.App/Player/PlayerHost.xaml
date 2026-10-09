@@ -161,7 +161,7 @@
                             IsThumbToolTipEnabled="False"
                             Maximum="1"
                             Minimum="0"
-                            StepFrequency="1"
+                            StepFrequency="0.1"
                             ValueChanged="SeekValueChanged" />
                         <Grid Margin="0,-6,0,0">
                             <TextBlock
@@ -200,6 +200,15 @@
                                 <AppBarButton.Icon>
                                     <FontIcon x:Name="CardModeIcon" FontFamily="Segoe MDL2 Assets" FontSize="16" Glyph="&#xE8EE;" />
                                 </AppBarButton.Icon>
+                                <AppBarButton.Flyout>
+                                    <MenuFlyout Opening="ModeMenuOpening">
+                                        <MenuFlyoutItem Click="ModeMenuClick" Tag="Cycle" Text="列表循环" />
+                                        <MenuFlyoutItem Click="ModeMenuClick" Tag="Single" Text="单曲循环" />
+                                        <MenuFlyoutItem Click="ModeMenuClick" Tag="Shuffle" Text="随机播放" />
+                                        <MenuFlyoutItem Click="ModeMenuClick" Tag="Line" Text="顺序播放" />
+                                        <MenuFlyoutItem Click="ModeMenuClick" Tag="Infinity" Text="相似无限" />
+                                    </MenuFlyout>
+                                </AppBarButton.Flyout>
                             </AppBarButton>
                             <StackPanel
                                 HorizontalAlignment="Center"
@@ -412,6 +421,15 @@
                         <AppBarButton.Icon>
                             <FontIcon x:Name="ModeIcon" FontFamily="Segoe MDL2 Assets" FontSize="14" Glyph="&#xE8EE;" />
                         </AppBarButton.Icon>
+                        <AppBarButton.Flyout>
+                            <MenuFlyout Opening="ModeMenuOpening">
+                                <MenuFlyoutItem Click="ModeMenuClick" Tag="Cycle" Text="列表循环" />
+                                <MenuFlyoutItem Click="ModeMenuClick" Tag="Single" Text="单曲循环" />
+                                <MenuFlyoutItem Click="ModeMenuClick" Tag="Shuffle" Text="随机播放" />
+                                <MenuFlyoutItem Click="ModeMenuClick" Tag="Line" Text="顺序播放" />
+                                <MenuFlyoutItem Click="ModeMenuClick" Tag="Infinity" Text="相似无限" />
+                            </MenuFlyout>
+                        </AppBarButton.Flyout>
                     </AppBarButton>
                     <AppBarButton
                         x:Name="PreviousButton"
@@ -474,7 +492,7 @@
                         IsThumbToolTipEnabled="False"
                         Maximum="1"
                         Minimum="0"
-                        StepFrequency="1"
+                        StepFrequency="0.1"
                         ValueChanged="SeekValueChanged" />
                     <TextBlock
                         x:Name="DurationText"

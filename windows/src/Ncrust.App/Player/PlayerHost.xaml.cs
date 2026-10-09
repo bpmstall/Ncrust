@@ -564,9 +564,44 @@ namespace Ncrust.Player
         {
             var engine = PlaybackHost.Engine;
             var index = Array.IndexOf(ModeCycle, engine.Mode);
-            var next = ModeCycle[(index + 1) % ModeCycle.Length];
-            engine.SetMode(next);
-            AppServices.Settings.SetInt(PlaybackHost.PlayModeKey, (int)next);
+            ApplyMode(ModeCycle[(index + 1) % ModeCycle.Length]);
+        }
+
+        // 右键（或长按）弹出全部模式，免去连点五下才转到想要的那档。
+        private void ModeMenuOpening(object sender, object e)
+        {
+            if (!(sender is MenuFlyout menu))
+            {
+                return;
+            }
+
+            var current = PlaybackHost.Engine.Mode.ToString(CultureInfo.InvariantCulture);
+            foreach (var item in menu.Items)
+            {
+                if (item is MenuFlyoutItem entry)
+                {
+                    entry.FontWeight = (entry.Tag as string) == current
+                        ? Windows.UI.Text.FontWeights.SemiBold
+                        : Windows.UI.Text.FontWeights.Normal;
+                }
+            }
+        }
+
+        private void ModeMenuClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuFlyoutItem item &&
+                item.Tag is string tag &&
+                Enum.TryParse(tag, out PlaybackMode mode) &&
+                Array.IndexOf(ModeCycle, mode) >= 0)
+            {
+                ApplyMode(mode);
+            }
+        }
+
+        private static void ApplyMode(PlaybackMode mode)
+        {
+            PlaybackHost.Engine.SetMode(mode);
+            AppServices.Settings.SetInt(PlaybackHost.PlayModeKey, (int)mode);
         }
 
         private void UpdateModeButton(PlaybackMode mode)
