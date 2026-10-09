@@ -1,12 +1,8 @@
 package com.takahashirinta.ncrust.ui.components
 
 import com.takahashirinta.ncrust.network.CoverUrls
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -19,10 +15,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.takahashirinta.ncrust.ui.BottomOverlayInsetDp
-import io.github.takahashirinta.kanesumi.anim.sokuou.MetroDefault
 import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouTweens
 import io.github.takahashirinta.kanesumi.anim.sokuou.rememberMetroFlingBehavior
 import io.github.takahashirinta.kanesumi.controls.MetroProgressIndicator
@@ -111,28 +106,25 @@ fun DetailScaffold(
                     }
                 }
                 DetailScaffoldState.Content -> {
-                    // 入场级联：内容分支从下方 12dp 微滑上 + 淡入。方向与 NavGraph 横向推入正交。
-                    val density = LocalDensity.current
-                    val slideOffsetPx = with(density) { 12.dp.roundToPx() }
-                    val cascadeState = remember {
-                        MutableTransitionState(false).apply { targetState = true }
-                    }
-                    AnimatedVisibility(
-                        visibleState = cascadeState,
-                        enter = fadeIn(animationSpec = tween(220, easing = MetroDefault)) +
-                            slideInVertically(
-                                animationSpec = tween(220, easing = MetroDefault),
-                                initialOffsetY = { slideOffsetPx }
-                            )
+                    // 入场只动绘制属性。AnimatedVisibility 的 slide 每帧改布局，
+                    // 专辑页首屏几十行歌曲会跟着重排，120Hz 上就是打开时的掉帧。
+                    val reveal = remember { Animatable(0f) }
+                    LaunchedEffect(Unit) { reveal.animateTo(1f, SokuouTweens.QuickSwitch) }
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val p = reveal.value
+                                if (p < 1f) {
+                                    alpha = p
+                                    translationY = 12.dp.toPx() * (1f - p)
+                                }
+                            },
+                        contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
+                        flingBehavior = rememberMetroFlingBehavior()
                     ) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
-                            flingBehavior = rememberMetroFlingBehavior()
-                        ) {
-                            item { header() }
-                            content()
-                        }
+                        item { header() }
+                        content()
                     }
                 }
             }

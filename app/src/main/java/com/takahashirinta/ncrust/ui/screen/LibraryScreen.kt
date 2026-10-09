@@ -1,6 +1,7 @@
 package com.takahashirinta.ncrust.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,12 +34,14 @@ import coil.compose.AsyncImage
 import com.takahashirinta.ncrust.auth.CookieManager
 import com.takahashirinta.ncrust.library.AlbumInfo
 import com.takahashirinta.ncrust.library.LibraryManager
+import com.takahashirinta.ncrust.library.PlayHistoryManager
 import com.takahashirinta.ncrust.network.PlaylistApi
 import com.takahashirinta.ncrust.network.SongItem
 import com.takahashirinta.ncrust.network.CoverUrls
 import com.takahashirinta.ncrust.ui.BottomOverlayInsetDp
 import com.takahashirinta.ncrust.ui.ResponsiveContent
 import io.github.takahashirinta.kanesumi.anim.sokuou.MetroDefault
+import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouTweens
 import io.github.takahashirinta.kanesumi.anim.sokuou.rememberMetroFlingBehavior
 import io.github.takahashirinta.kanesumi.controls.MetroProgressIndicator
 import io.github.takahashirinta.kanesumi.controls.MetroTabItem
@@ -45,16 +50,20 @@ import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroTypography
 import io.github.takahashirinta.kanesumi.core.theme.MetroText
 import com.takahashirinta.ncrust.ui.components.PlayAllButton
+import com.takahashirinta.ncrust.ui.components.PlayAllDialog
 import com.takahashirinta.ncrust.ui.components.SongCard
 import com.takahashirinta.ncrust.ui.components.SongCardStyle
 import com.takahashirinta.ncrust.ui.components.SongMenuAction
 import com.takahashirinta.ncrust.ui.i18n.LocalStrings
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.widget.Toast
 
 @Composable
 fun LibraryScreen(
     onSongClick: (SongItem) -> Unit,
+    onPlayLikedPlaylist: () -> Unit = {},
+    onPlayLikedHeartbeat: () -> Unit = {},
     onAlbumClick: (Long) -> Unit,
     onPlayAlbum: (Long) -> Unit,
     onPlaylistClick: (PlaylistApi.PlaylistInfo) -> Unit = {},
@@ -69,11 +78,12 @@ fun LibraryScreen(
     val strings = LocalStrings.current
 
     var savedSongs by remember { mutableStateOf(LibraryManager.getSavedSongs(context)) }
+    var showLikedPlayDialog by remember { mutableStateOf(false) }
     var savedAlbums by remember { mutableStateOf(LibraryManager.getSavedAlbums(context)) }
     // 未获云端确认的点赞操作数量：>0 时页面顶部提示"仅本地/待重试"，不冒充已同步。
     var pendingSyncCount by remember { mutableIntStateOf(0) }
     var selectedCategory by remember { mutableIntStateOf(0) }
-    val categories = listOf(strings.categoryTracks, strings.categoryAlbums, strings.categoryPlaylists)
+    val categories = listOf(strings.categoryTracks, strings.categoryAlbums, strings.categoryPlaylists, strings.categoryHistory)
 
     var playlists by remember { mutableStateOf<List<PlaylistApi.PlaylistInfo>>(emptyList()) }
     var isLoadingPlaylists by remember { mutableStateOf(false) }
@@ -104,6 +114,16 @@ fun LibraryScreen(
         savedSongs = LibraryManager.getSavedSongs(context)
         savedAlbums = LibraryManager.getSavedAlbums(context)
         pendingSyncCount = LibraryManager.getPendingSyncSongIds(context).size
+    }
+
+    if (showLikedPlayDialog) {
+        PlayAllDialog(
+            songCount = savedSongs.size,
+            onDismiss = { showLikedPlayDialog = false },
+            onReplaceAndPlay = onPlayLikedPlaylist,
+            onInsertNext = { savedSongs.forEach(onSongAppendToQueue) },
+            onHeartbeat = onPlayLikedHeartbeat
+        )
     }
 
     LaunchedEffect(selectedCategory) {
@@ -207,6 +227,15 @@ fun LibraryScreen(
                                 MetroText(strings.noSavedSongs, color = LocalMetroColors.current.onSurfaceVariant, style = LocalMetroTypography.current.bodyLarge)
                             }
                         } else {
+                            // 按歌单方式播放「我喜欢的音乐」：整表替换队列，从第一首开始。
+                            // 列表是分页加载的，这里播的是已加载部分。
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                PlayAllButton(size = 40.dp, onClick = { showLikedPlayDialog = true })
+                            }
                             LazyColumn(
                                 modifier = Modifier.fillMaxWidth().weight(1f),
                                 state = songListState,
@@ -270,14 +299,10 @@ fun LibraryScreen(
                             contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
                             flingBehavior = rememberMetroFlingBehavior()
                         ) {
-                            items(savedAlbums, key = { it.albumId }) { album ->
+                            itemsIndexed(savedAlbums, key = { _, album -> album.albumId }) { index, album ->
                                 LibraryAlbumGridItem(
                                     album = album,
-                                    modifier = Modifier.fillMaxWidth().animateItem(
-                                        fadeInSpec = tween(150, easing = MetroDefault),
-                                        placementSpec = tween(220, easing = MetroDefault),
-                                        fadeOutSpec = tween(120, easing = MetroDefault)
-                                    ),
+                                    modifier = Modifier.fillMaxWidth().gridReveal(index),
                                     onClick = { onAlbumClick(album.albumId) },
                                     onPlayAll = { onPlayAlbum(album.albumId) }
                                 )
@@ -322,14 +347,10 @@ fun LibraryScreen(
                                 contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
                                 flingBehavior = rememberMetroFlingBehavior()
                             ) {
-                                items(playlists, key = { it.id }) { pl ->
+                                itemsIndexed(playlists, key = { _, pl -> pl.id }) { index, pl ->
                                     PlaylistGridItem(
                                         playlist = pl,
-                                        modifier = Modifier.fillMaxWidth().animateItem(
-                                            fadeInSpec = tween(150, easing = MetroDefault),
-                                            placementSpec = tween(220, easing = MetroDefault),
-                                            fadeOutSpec = tween(120, easing = MetroDefault)
-                                        ),
+                                        modifier = Modifier.fillMaxWidth().gridReveal(index),
                                         onClick = { onPlaylistClick(pl) },
                                         onPlayAll = { onPlayPlaylist(pl.id) }
                                     )
@@ -338,10 +359,28 @@ fun LibraryScreen(
                         }
                     }
                 }
-            } }
+                3 -> {
+                    val history = remember(refreshTrigger) { PlayHistoryManager.recent(context) }
+                    if (history.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            MetroText(strings.noSavedSongs, color = LocalMetroColors.current.onSurfaceVariant, style = LocalMetroTypography.current.bodyLarge)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(history, key = { it.id }) { song ->
+                                SongCard(
+                                    song = song,
+                                    style = SongCardStyle.LIST,
+                                    onClick = { onSongClick(song) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            }
         }
     }
-
     }
 }
 
@@ -370,6 +409,31 @@ fun PlaylistGridItem(
         MetroText(playlist.name, color = LocalMetroColors.current.onBackground, style = LocalMetroTypography.current.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp))
         MetroText(strings.trackCount(playlist.trackCount), color = LocalMetroColors.current.onSurfaceVariant, style = LocalMetroTypography.current.bodySmall, modifier = Modifier.padding(horizontal = 6.dp))
         Spacer(Modifier.height(6.dp))
+    }
+}
+
+/**
+ * 网格项入场。只在首次出现时播一次，之后恒等，滚动时零开销。
+ * 用 graphicsLayer 缩放而非 animateItem：后者每帧改布局，120Hz 滚动时会掉帧。
+ */
+@Composable
+private fun Modifier.gridReveal(index: Int): Modifier {
+    val scale = remember { Animatable(0.96f) }
+    LaunchedEffect(Unit) {
+        if (index < 12) {
+            delay(index * 16L)
+            scale.animateTo(1f, SokuouTweens.QuickSwitch)
+        } else {
+            scale.snapTo(1f)
+        }
+    }
+    return graphicsLayer {
+        val s = scale.value
+        if (s < 1f) {
+            scaleX = s
+            scaleY = s
+            alpha = (s - 0.96f) / 0.04f
+        }
     }
 }
 
