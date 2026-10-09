@@ -62,6 +62,7 @@ import io.github.takahashirinta.kanesumi.core.theme.LocalMetroTypography
 import io.github.takahashirinta.kanesumi.core.theme.MetroIcon
 import io.github.takahashirinta.kanesumi.core.theme.MetroText
 import kotlin.math.abs
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -383,6 +384,10 @@ fun PlayerCard(
                     }
                     // 手动拖动循环：同样忽略消费标志读位移, 边拖边 consume
                     // （压制 miniBar clickable 的按压, 让它不会在抬手时误触发展开）。
+                    // pointerInput 作用域不能直接调用 Animatable；只保留一个可取消的
+                    // snap 任务，避免每个 MOVE 排队，同时让拖动过程即时反馈。
+                    var latestProgress = progress.value
+                    var progressUpdate: Job? = null
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == pointer } ?: break
@@ -390,15 +395,14 @@ fun PlayerCard(
                         change.consume()
                         val dragAmount = change.position.y - change.previousPosition.y
                         if (dragAmount != 0f) {
-                            // pointerInput 作用域禁止直接调 snapTo，只能 launch。
-                            coroutineScope.launch {
-                                progress.snapTo(
-                                    (progress.value - dragAmount / totalDragDistancePx).coerceIn(0f, 1f)
-                                )
-                            }
+                            latestProgress = (latestProgress - dragAmount / totalDragDistancePx).coerceIn(0f, 1f)
+                            progressUpdate?.cancel()
+                            progressUpdate = coroutineScope.launch { progress.snapTo(latestProgress) }
                         }
                     }
+                    progressUpdate?.cancel()
                     coroutineScope.launch {
+                        progress.snapTo(latestProgress)
                         val target = if (startProgress < 0.5f) {
                             if (progress.value >= 0.5f) 1f else 0f
                         } else {
@@ -518,13 +522,12 @@ fun PlayerCard(
                         // alpha 用阶梯而非交叉淡化: 切换时源面板瞬时隐藏、目标面板单层全宽滑入,
                         // 每帧只合成一个面板——原先 260ms 内两个全屏面板同时 alpha 混合是
                         // 低端机上左右切换动作的主要 GPU 成本。
-                        Box(
+                        if (showLyrics) Box(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
-                                    val q = queueSlideProgress.value
-                                    alpha = lyricAnimProgress.value * if (q < 0.01f) 1f else 0f
-                                    translationX = -q * screenWidthPx
+                                    alpha = lyricAnimProgress.value
+                                    translationX = -queueSlideProgress.value * screenWidthPx
                                 }
                         ) {
                             // 切歌时旧歌词渐隐、新歌词渐显（Sokuou UWP 缓动）。
@@ -542,7 +545,7 @@ fun PlayerCard(
                                     positionFlow = playerViewModel.currentPosition,
                                     isPlaying = isPlaying,
                                     isBuffering = isBuffering,
-                                    isVisible = showLyrics,
+                                    isVisible = true,
                                     forcedLocateTrigger = lyricLocateTrigger,
                                     onSeekToMs = { ms -> playerViewModel.seekTo(ms) },
                                     enabled = lyricsEnabled && cardExpandedForInput,
@@ -556,7 +559,7 @@ fun PlayerCard(
                         // alpha 阶梯同上: q < 0.01 时完全透明, 切换只合成单个面板
                         // 面板标题行高度: 队列自动定位要按"整个队列区域"(含标题行)居中
                         var queueHeaderHeightPx by remember { mutableFloatStateOf(0f) }
-                        Column(
+                        if (showQueue) Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {

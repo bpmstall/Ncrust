@@ -1,6 +1,5 @@
 package com.takahashirinta.ncrust.ui.player
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -388,24 +387,11 @@ fun QueueView(
                             else tween(0),
                             label = "queueRowShift"
                         ).value
-                        // 目标行高亮淡入淡出(120ms): 落定瞬间高亮消失不再"pop",
-        // 否则重排那一帧背景色突变 = 闪一下
-                        val highlightColor by animateColorAsState(
-                            targetValue = if (highlighted) LocalMetroColors.current.surfaceVariant
-                            else Color.Transparent,
-                            animationSpec = tween(120),
-                            label = "queueHighlight"
-                        )
+                        // 普通滚动不维护每行的颜色动画和 placement 动画；高亮只在拖拽
+                        // 期间出现，视觉变化不值得把状态带进所有可见行。
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .animateItem(
-                                    // placement 恒定瞬时: 重排的视觉完全由拖拽的让位位移承担,
-                                    // 落定瞬间槽位跳变 + 让位归零同帧相消, 零视觉变化;
-                                    // 若落定帧切回 spring, animateItem 会把整轮重排再播一遍
-                                    // (= 用户看到的"重排动画")
-                                    placementSpec = tween(0)
-                                )
                                 .graphicsLayer {
                                     // 被拖行的本体隐藏(alpha=0), 视觉由列表外的悬浮层渲染——
                                     // 悬浮层不随 LazyColumn 滚动回收, 行槽位滚出视口也不会"消失"
@@ -413,7 +399,9 @@ fun QueueView(
                                     // 其余行用弹簧让位, 形成"挖出空位"的联动感
                                     translationY = animatedShift
                                 }
-                                .background(highlightColor)
+                                .background(
+                                    if (highlighted) LocalMetroColors.current.surfaceVariant else Color.Transparent
+                                )
                                 // 记录被拖行高度（让位距离换算基座）
                                 .onGloballyPositioned {
                                     if (qi == draggingQueueIndex) {
