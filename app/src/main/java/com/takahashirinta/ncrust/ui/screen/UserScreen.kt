@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
@@ -12,7 +13,9 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import io.github.takahashirinta.kanesumi.anim.sokuou.rememberMetroFlingBehavior
+import io.github.takahashirinta.kanesumi.controls.MetroDivider
 import io.github.takahashirinta.kanesumi.controls.MetroSelectorFlyout
 import io.github.takahashirinta.kanesumi.controls.MetroSwitch
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
@@ -41,6 +45,7 @@ import com.takahashirinta.ncrust.power.BackgroundActivity
 import com.takahashirinta.ncrust.ui.BottomOverlayInsetDp
 import com.takahashirinta.ncrust.ui.components.QrAuthorizeScreen
 import com.takahashirinta.ncrust.ui.components.QrLoginDialog
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import com.takahashirinta.ncrust.ui.i18n.LocalStrings
 import com.takahashirinta.ncrust.ui.i18n.LanguagePreset
 import com.takahashirinta.ncrust.ui.i18n.getSavedLanguageCode
@@ -244,256 +249,315 @@ fun UserScreen(
 
         // 音质
         item {
-            SectionTitle(strings.qualitySectionTitle)
-            MetroDropdownRow(
-                label = strings.wifiQualityLabel,
-                selectedIndex = wifiQuality,
-                options = strings.qualityOptions,
-                onSelect = {
-                    wifiQuality = it
-                    prefs.edit().putInt("wifi_quality", it).apply()
-                }
-            )
-            MetroDropdownRow(
-                label = strings.mobileQualityLabel,
-                selectedIndex = mobileQuality,
-                options = strings.qualityOptions,
-                onSelect = {
-                    mobileQuality = it
-                    prefs.edit().putInt("mobile_quality", it).apply()
-                }
-            )
-            Spacer(Modifier.height(24.dp))
+            SectionHeader(AppIcons.AudioQuality, strings.qualitySectionTitle)
+            SettingsCard {
+                MetroDropdownRow(
+                    label = strings.wifiQualityLabel,
+                    selectedIndex = wifiQuality,
+                    options = strings.qualityOptions,
+                    onSelect = {
+                        wifiQuality = it
+                        prefs.edit().putInt("wifi_quality", it).apply()
+                    }
+                )
+                CardDivider()
+                MetroDropdownRow(
+                    label = strings.mobileQualityLabel,
+                    selectedIndex = mobileQuality,
+                    options = strings.qualityOptions,
+                    onSelect = {
+                        mobileQuality = it
+                        prefs.edit().putInt("mobile_quality", it).apply()
+                    }
+                )
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
-        // 播放
+        // 播放与歌词
         item {
-            SectionTitle(strings.playbackSectionTitle)
-            // 标题与 Switch 同行居中，描述另起一行——描述不参与对齐，否则 Switch
-            // 会被顶到与描述顶部对齐，看起来像挂在描述上。
-            SettingSwitchRow(
-                title = strings.gaplessSectionTitle,
-                description = strings.gaplessDescription,
-                checked = gaplessEnabled,
-                onCheckedChange = {
-                    gaplessEnabled = it
-                    prefs.edit().putBoolean("gapless_playback", it).apply()
-                    // 即时生效: VM 缓存的 gaplessEnabled 不刷新的话,
-                    // 本首歌的预载状态与开关不一致, 要等下一首歌才对上
-                    playerViewModel.refreshGaplessSetting()
-                }
-            )
-            // 歌词翻译开关(Spotify 式双语:原句下方小号译文)。切了立即生效,播放器常挂载无需重进。
-            SettingSwitchRow(
-                title = strings.lyricsTranslationLabel,
-                checked = lyricsTranslation,
-                onCheckedChange = {
-                    lyricsTranslation = it
-                    prefs.edit().putBoolean("lyrics_translation", it).apply()
-                    playerViewModel.setLyricsTranslation(it)
-                }
-            )
-            // 歌词字号选择 (紧凑 22sp / 标准 26sp / 大号 30sp / 特大 34sp)
-            MetroDropdownRow(
-                label = "歌词大小",
-                selectedIndex = lyricsFontSize,
-                options = listOf("紧凑 (22sp)", "标准 (26sp)", "大号 (30sp)", "特大 (34sp)"),
-                onSelect = {
-                    lyricsFontSize = it
-                    prefs.edit().putInt("lyrics_font_size", it).apply()
-                }
-            )
-            // 歌词对齐方式 (居左 / 居中)
-            SettingSwitchRow(
-                title = "歌词居中对齐",
-                description = "关闭为居左对齐（Apple Music/Spotify风格），开启为居中对齐",
-                checked = lyricsAlignCenter,
-                onCheckedChange = {
-                    lyricsAlignCenter = it
-                    prefs.edit().putBoolean("lyrics_align_center", it).apply()
-                }
-            )
-            // 歌词界面紧凑控制栏
-            SettingSwitchRow(
-                title = "歌词模式精简控制栏",
-                description = "打开歌词时缩小底部播放控制按钮，留出更大视野与显示行数",
-                checked = lyricsCompactControls,
-                onCheckedChange = {
-                    lyricsCompactControls = it
-                    prefs.edit().putBoolean("lyrics_compact_controls", it).apply()
-                }
-            )
-            // 歌词常亮
-            SettingSwitchRow(
-                title = "看歌词时屏幕常亮",
-                checked = lyricsKeepScreenOn,
-                onCheckedChange = {
-                    lyricsKeepScreenOn = it
-                    prefs.edit().putBoolean("lyrics_keep_screen_on", it).apply()
-                }
-            )
-            Spacer(Modifier.height(24.dp))
+            SectionHeader(AppIcons.Playback, strings.playbackSectionTitle)
+            SettingsCard {
+                SettingSwitchRow(
+                    title = strings.gaplessSectionTitle,
+                    description = strings.gaplessDescription,
+                    checked = gaplessEnabled,
+                    onCheckedChange = {
+                        gaplessEnabled = it
+                        prefs.edit().putBoolean("gapless_playback", it).apply()
+                        playerViewModel.refreshGaplessSetting()
+                    }
+                )
+                CardDivider()
+                SettingSwitchRow(
+                    title = strings.lyricsTranslationLabel,
+                    checked = lyricsTranslation,
+                    onCheckedChange = {
+                        lyricsTranslation = it
+                        prefs.edit().putBoolean("lyrics_translation", it).apply()
+                        playerViewModel.setLyricsTranslation(it)
+                    }
+                )
+                CardDivider()
+                MetroDropdownRow(
+                    label = "歌词大小",
+                    selectedIndex = lyricsFontSize,
+                    options = listOf("紧凑 (22sp)", "标准 (26sp)", "大号 (30sp)", "特大 (34sp)"),
+                    onSelect = {
+                        lyricsFontSize = it
+                        prefs.edit().putInt("lyrics_font_size", it).apply()
+                    }
+                )
+                CardDivider()
+                SettingSwitchRow(
+                    title = "歌词居中对齐",
+                    description = "关闭为居左对齐（Apple Music/Spotify风格），开启为居中对齐",
+                    checked = lyricsAlignCenter,
+                    onCheckedChange = {
+                        lyricsAlignCenter = it
+                        prefs.edit().putBoolean("lyrics_align_center", it).apply()
+                    }
+                )
+                CardDivider()
+                SettingSwitchRow(
+                    title = "歌词模式精简控制栏",
+                    description = "打开歌词时缩小底部播放控制按钮，留出更大视野与显示行数",
+                    checked = lyricsCompactControls,
+                    onCheckedChange = {
+                        lyricsCompactControls = it
+                        prefs.edit().putBoolean("lyrics_compact_controls", it).apply()
+                    }
+                )
+                CardDivider()
+                SettingSwitchRow(
+                    title = "看歌词时屏幕常亮",
+                    checked = lyricsKeepScreenOn,
+                    onCheckedChange = {
+                        lyricsKeepScreenOn = it
+                        prefs.edit().putBoolean("lyrics_keep_screen_on", it).apply()
+                    }
+                )
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
-        // 视觉与现代化动效
+        // 视觉与现代质感
         item {
-            SectionTitle("视觉与现代质感")
-            SettingSwitchRow(
-                title = "动态封面氛围模糊背景",
-                description = "从当前歌曲封面提取色彩与柔和高斯模糊，在全屏播放器背景渲染",
-                checked = dynamicArtworkBackground,
-                onCheckedChange = {
-                    dynamicArtworkBackground = it
-                    prefs.edit().putBoolean("dynamic_artwork_background", it).apply()
-                }
-            )
-            SettingSwitchRow(
-                title = "现代化大圆角卡片",
-                description = "使用 18dp~20dp 现代大圆角与浮岛设计（Xiaomi HyperOS 风格）",
-                checked = modernRoundedCorners,
-                onCheckedChange = {
-                    modernRoundedCorners = it
-                    prefs.edit().putBoolean("modern_rounded_corners", it).apply()
-                }
-            )
-            SettingSwitchRow(
-                title = "触觉轻震反馈",
-                description = "播放、暂停、切歌与模式切换时提供轻微触觉反馈",
-                checked = hapticFeedback,
-                onCheckedChange = {
-                    hapticFeedback = it
-                    prefs.edit().putBoolean("haptic_feedback", it).apply()
-                }
-            )
-            Spacer(Modifier.height(24.dp))
+            SectionHeader(AppIcons.Visual, "视觉与现代质感")
+            SettingsCard {
+                SettingSwitchRow(
+                    title = "动态封面氛围模糊背景",
+                    description = "从当前歌曲封面提取色彩与柔和高斯模糊，在全屏播放器背景渲染",
+                    checked = dynamicArtworkBackground,
+                    onCheckedChange = {
+                        dynamicArtworkBackground = it
+                        prefs.edit().putBoolean("dynamic_artwork_background", it).apply()
+                    }
+                )
+                CardDivider()
+                SettingSwitchRow(
+                    title = "现代化大圆角卡片",
+                    description = "使用 18dp~20dp 现代大圆角与浮岛设计（Xiaomi HyperOS 风格）",
+                    checked = modernRoundedCorners,
+                    onCheckedChange = {
+                        modernRoundedCorners = it
+                        prefs.edit().putBoolean("modern_rounded_corners", it).apply()
+                    }
+                )
+                CardDivider()
+                SettingSwitchRow(
+                    title = "触觉轻震反馈",
+                    description = "播放、暂停、切歌与模式切换时提供轻微触觉反馈",
+                    checked = hapticFeedback,
+                    onCheckedChange = {
+                        hapticFeedback = it
+                        prefs.edit().putBoolean("haptic_feedback", it).apply()
+                    }
+                )
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
         // 外观：主题模式 + 主题色 + 语言
         item {
-            SectionTitle(strings.themeModeSectionTitle)
-            ThemeModeSelector(
-                selected = themeMode,
-                labels = Triple(
-                    strings.themeModeSystem,
-                    strings.themeModeDark,
-                    strings.themeModeLight
-                ),
-                onSelect = onThemeModeChange
-            )
-            Spacer(Modifier.height(24.dp))
-
-            SectionTitle(strings.themeSectionTitle)
-            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                ThemeColorSelector(
-                    selectedIndex = themeIndex,
-                    presets = themeColorPresets,
-                    onSelect = onThemeChange
+            SectionHeader(AppIcons.Language, "外观与个性化")
+            SettingsCard {
+                ThemeModeSelector(
+                    selected = themeMode,
+                    labels = Triple(
+                        strings.themeModeSystem,
+                        strings.themeModeDark,
+                        strings.themeModeLight
+                    ),
+                    onSelect = onThemeModeChange
                 )
-            }
-            Spacer(Modifier.height(24.dp))
-
-            SectionTitle(strings.languageSectionTitle)
-            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                MetroLanguageDropdown(
-                    selectedCode = selectedLanguageCode,
-                    presets = languagePresets,
-                    onSelect = { code ->
-                        if (code != selectedLanguageCode) {
-                            selectedLanguageCode = code
-                            onLanguageChange(code)
-                        }
-                    }
-                )
-            }
-            Spacer(Modifier.height(32.dp))
-        }
-
-        // 后台运行：跳转系统"允许后台活动 / 忽略电池优化"设置（与首次启动弹窗同一入口）。
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        runCatching {
-                            context.startActivity(BackgroundActivity.requestIntent(context))
-                        }.onFailure {
-                            runCatching {
-                                context.startActivity(BackgroundActivity.appDetailsIntent(context))
+                CardDivider()
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    ThemeColorSelector(
+                        selectedIndex = themeIndex,
+                        presets = themeColorPresets,
+                        onSelect = onThemeChange
+                    )
+                }
+                CardDivider()
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    MetroLanguageDropdown(
+                        selectedCode = selectedLanguageCode,
+                        presets = languagePresets,
+                        onSelect = { code ->
+                            if (code != selectedLanguageCode) {
+                                selectedLanguageCode = code
+                                onLanguageChange(code)
                             }
                         }
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MetroText(
-                    strings.batteryTitle,
-                    color = LocalMetroColors.current.onBackground,
-                    style = TextStyle(fontSize = 15.sp),
-                    modifier = Modifier.weight(1f)
-                )
-                MetroIcon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = LocalMetroColors.current.onSurfaceVariant,
-                    sizeDp = 20.dp,
-                )
+                    )
+                }
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
         }
 
-        // 存储与缓存：显示当前占用，点击后弹窗确认再清除。
+        // 系统与存储
         item {
-            SectionTitle(strings.storageSectionTitle)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showClearCacheConfirm = true }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MetroText(
-                    strings.cacheSizeLabel(cacheSize),
-                    color = LocalMetroColors.current.onBackground,
-                    style = TextStyle(fontSize = 15.sp),
-                    modifier = Modifier.weight(1f)
-                )
-                MetroText(
-                    strings.clearCache,
-                    color = LocalMetroColors.current.primary,
-                    style = TextStyle(fontSize = 15.sp)
-                )
+            SectionHeader(AppIcons.Settings, "系统与存储")
+            SettingsCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            runCatching {
+                                context.startActivity(BackgroundActivity.requestIntent(context))
+                            }.onFailure {
+                                runCatching {
+                                    context.startActivity(BackgroundActivity.appDetailsIntent(context))
+                                }
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroText(
+                        strings.batteryTitle,
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 15.sp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetroIcon(
+                        AppIcons.ChevronRight,
+                        contentDescription = null,
+                        tint = LocalMetroColors.current.onSurfaceVariant,
+                        sizeDp = 20.dp,
+                    )
+                }
+                CardDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showClearCacheConfirm = true }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroText(
+                        strings.cacheSizeLabel(cacheSize),
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 15.sp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetroText(
+                        strings.clearCache,
+                        color = LocalMetroColors.current.primary,
+                        style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    )
+                }
+                CardDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenAbout)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroText(
+                        strings.aboutButton,
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 15.sp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetroIcon(
+                        AppIcons.ChevronRight,
+                        contentDescription = null,
+                        tint = LocalMetroColors.current.onSurfaceVariant,
+                        sizeDp = 20.dp,
+                    )
+                }
             }
             Spacer(Modifier.height(32.dp))
-        }
-
-        // 关于：单行条目，右侧带箭头。
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenAbout)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MetroText(
-                    strings.aboutButton,
-                    color = LocalMetroColors.current.onBackground,
-                    style = TextStyle(fontSize = 15.sp),
-                    modifier = Modifier.weight(1f)
-                )
-                MetroIcon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = LocalMetroColors.current.onSurfaceVariant,
-                    sizeDp = 20.dp,
-                )
-            }
         }
     }
     }
 }
 
-/** Profile 块：96dp 方形头像 + 昵称 titleLarge + UID/登录状态 bodySmall。整块可点。 */
+@Composable
+private fun SettingsCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(
+                color = LocalMetroColors.current.surface,
+                shape = RoundedCornerShape(14.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = LocalMetroColors.current.surfaceVariant.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clip(RoundedCornerShape(14.dp))
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun CardDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .height(1.dp)
+            .background(LocalMetroColors.current.surfaceVariant.copy(alpha = 0.35f))
+    )
+}
+
+@Composable
+private fun SectionHeader(
+    icon: ImageVector,
+    title: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MetroIcon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = LocalMetroColors.current.primary,
+            sizeDp = 18.dp
+        )
+        Spacer(Modifier.width(8.dp))
+        MetroText(
+            title,
+            color = LocalMetroColors.current.onBackground,
+            style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        )
+    }
+}
+
+/** Profile 块：64dp 头像 + 现代化卡片容器 + 昵称 + UID/登录状态 + 右箭头 */
 @Composable
 private fun ProfileBlock(
     isLoading: Boolean,
@@ -507,13 +571,25 @@ private fun ProfileBlock(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(
+                color = LocalMetroColors.current.surface,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = LocalMetroColors.current.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(96.dp)
+                .size(64.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(LocalMetroColors.current.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
@@ -526,31 +602,30 @@ private fun ProfileBlock(
                 )
             } else {
                 MetroIcon(
-                    Icons.Default.Person,
+                    AppIcons.NavUser,
                     strings.userIconDesc,
                     tint = LocalMetroColors.current.onSurfaceVariant,
-                    sizeDp = 52.dp,
+                    sizeDp = 32.dp,
                 )
             }
         }
         Spacer(Modifier.width(16.dp))
-        // 文字列 weight(1f)：任何语言的昵称/提示都能换行不撑破。
         Column(modifier = Modifier.weight(1f)) {
             when {
                 isLoading -> MetroText(
                     strings.loading,
                     color = LocalMetroColors.current.onSurfaceVariant,
-                    style = TextStyle(fontSize = 20.sp),
+                    style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium),
                 )
                 profile != null -> {
                     MetroText(
                         profile.nickname,
                         color = LocalMetroColors.current.onBackground,
-                        style = LocalMetroTypography.current.title,
-                        maxLines = 2,
+                        style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(4.dp))
                     MetroText(
                         uidLabel,
                         color = LocalMetroColors.current.onSurfaceVariant,
@@ -562,15 +637,15 @@ private fun ProfileBlock(
                 else -> {
                     MetroText(
                         notLoggedInText,
-                        color = LocalMetroColors.current.onSurfaceVariant,
-                        style = LocalMetroTypography.current.title,
-                        maxLines = 2,
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(4.dp))
                     MetroText(
                         loginHintText,
-                        color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.6f),
+                        color = LocalMetroColors.current.onSurfaceVariant,
                         style = LocalMetroTypography.current.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -578,18 +653,13 @@ private fun ProfileBlock(
                 }
             }
         }
+        MetroIcon(
+            imageVector = AppIcons.ChevronRight,
+            contentDescription = null,
+            tint = LocalMetroColors.current.onSurfaceVariant,
+            sizeDp = 20.dp
+        )
     }
-}
-
-/** Groove 风分区标题：16sp semi-bold、上留白 4dp、左 16dp。 */
-@Composable
-private fun SectionTitle(text: String) {
-    MetroText(
-        text,
-        color = LocalMetroColors.current.onBackground,
-        style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-        modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp)
-    )
 }
 
 /**

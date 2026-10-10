@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.takahashirinta.ncrust.network.SongItem
 import com.takahashirinta.ncrust.network.CoverUrls
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouPresets
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroTypography
@@ -189,7 +190,7 @@ fun PlayAllButton(
         contentAlignment = Alignment.Center
     ) {
         MetroIcon(
-            imageVector = Icons.Default.PlayArrow,
+            imageVector = AppIcons.Play,
             contentDescription = LocalStrings.current.playAllButton,
             tint = Color.Black,
             sizeDp = size * 0.55f

@@ -129,6 +129,7 @@ fun ArtistDetailScreen(
 
     DetailScaffold(
         title = strings.artistDetailTitle,
+        coverUrl = artist?.picUrl,
         onBack = onBack,
         isLoading = isLoading,
         hasCachedContent = artist != null,

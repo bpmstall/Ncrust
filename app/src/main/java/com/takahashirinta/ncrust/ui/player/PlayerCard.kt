@@ -8,6 +8,8 @@ import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -20,6 +22,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.RectangleShape
@@ -62,6 +65,7 @@ import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouTweens
 import io.github.takahashirinta.kanesumi.controls.MetroDivider
 import io.github.takahashirinta.kanesumi.controls.MetroDropdownMenu
 import io.github.takahashirinta.kanesumi.controls.MetroDropdownMenuItem
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import io.github.takahashirinta.kanesumi.controls.MetroIconButton
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroTypography
@@ -742,7 +746,7 @@ fun PlayerCard(
                                 }
                                 MetroIconButton(onClick = onSavePlaylist) {
                                     MetroIcon(
-                                        imageVector = Icons.Default.Add,
+                                        imageVector = AppIcons.Add,
                                         contentDescription = strings.saveAsPlaylist,
                                         tint = LocalMetroColors.current.onBackground,
                                         sizeDp = 24.dp
@@ -751,7 +755,7 @@ fun PlayerCard(
                                 // 清空队列: 停播并回到暂无播放态
                                 MetroIconButton(onClick = onClearQueue) {
                                     MetroIcon(
-                                        imageVector = Icons.Default.DeleteSweep,
+                                        imageVector = AppIcons.DeleteSweep,
                                         contentDescription = strings.clearQueue,
                                         tint = LocalMetroColors.current.onBackground,
                                         sizeDp = 24.dp
@@ -913,6 +917,17 @@ fun PlayerCard(
 
         // 迷你播放栏叠加层：始终在 Composition 中，透明度仅在绘制阶段控制，避免动画期间触发重组
         // 注意：graphicsLayer 必须置于 background 之前，否则展开态时背景不受 alpha 约束而残留黑框
+        val miniBgBase = LocalMetroColors.current.surface
+        val miniBgColor = ambientColor?.let { lerp(miniBgBase, it, 0.14f) } ?: miniBgBase
+        val miniBorderBrush = remember(ambientColor) {
+            Brush.horizontalGradient(
+                listOf(
+                    (ambientColor ?: Color.White).copy(alpha = 0.22f),
+                    (ambientColor ?: Color.White).copy(alpha = 0.08f),
+                    Color.Transparent
+                )
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -923,7 +938,8 @@ fun PlayerCard(
                 .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
                 .padding(horizontal = 12.dp, vertical = 4.dp)
                 .height(48.dp)
-                .background(LocalMetroColors.current.surface)
+                .background(miniBgColor)
+                .border(BorderStroke(1.dp, miniBorderBrush))
                 .then(
                     // 暂无播放（hasSong=false）时不可点击展开，避免空白播放器被拉起。
                     if (miniBarEnabled && hasSong) Modifier.clickable(
@@ -940,6 +956,19 @@ fun PlayerCard(
                     ) else Modifier
                 )
         ) {
+            if (prefs.getBoolean("dynamic_artwork_background", true)) {
+                ambientBitmap?.let { bitmap ->
+                    Image(
+                        painter = remember(bitmap) { BitmapPainter(bitmap.asImageBitmap()) },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .blur(20.dp)
+                            .graphicsLayer { alpha = 0.14f }
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -978,7 +1007,7 @@ fun PlayerCard(
                             onPlayPause()
                         }) {
                             MetroIcon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                imageVector = if (isPlaying) AppIcons.Pause else AppIcons.Play,
                                 contentDescription = null,
                                 tint = LocalMetroColors.current.onBackground
                             )
@@ -987,7 +1016,7 @@ fun PlayerCard(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onPlayNext()
                         }) {
-                            MetroIcon(Icons.Default.SkipNext, null, tint = LocalMetroColors.current.onBackground)
+                            MetroIcon(AppIcons.SkipNext, null, tint = LocalMetroColors.current.onBackground)
                         }
                     } else {
                         Spacer(modifier = Modifier.width(96.dp))
@@ -1009,7 +1038,7 @@ fun PlayerCard(
                             onPlayNothing()
                         }) {
                             MetroIcon(
-                                imageVector = Icons.Default.PlayArrow,
+                                imageVector = AppIcons.Play,
                                 contentDescription = LocalStrings.current.playButton,
                                 tint = LocalMetroColors.current.onBackground
                             )
@@ -1100,7 +1129,7 @@ fun PlayerCard(
             ) {
                 if (dismissEnabled) {
                     MetroIconButton(onClick = onDismiss) {
-                        MetroIcon(Icons.Default.KeyboardArrowDown, strings.collapsePlayer, tint = LocalMetroColors.current.onBackground)
+                        MetroIcon(AppIcons.ArrowDown, strings.collapsePlayer, tint = LocalMetroColors.current.onBackground)
                     }
                 }
             }
@@ -1112,11 +1141,11 @@ fun PlayerCard(
 private const val COVER_HOLD_MS = 400L
 
 private fun playModeIcon(mode: Int) = when (mode) {
-    QueueModes.SINGLE -> Icons.Default.RepeatOne
-    QueueModes.SHUFFLE -> Icons.Default.Shuffle
-    QueueModes.LINE -> Icons.Default.PlaylistPlay
-    QueueModes.INFINITY -> Icons.Default.AllInclusive
-    else -> Icons.Default.Repeat
+    QueueModes.SINGLE -> AppIcons.RepeatOne
+    QueueModes.SHUFFLE -> AppIcons.Shuffle
+    QueueModes.LINE -> AppIcons.Queue
+    QueueModes.INFINITY -> AppIcons.Infinity
+    else -> AppIcons.Repeat
 }
 
 /** 播放模式菜单的一项：当前档用主题色标出并带图标，点选即切。 */

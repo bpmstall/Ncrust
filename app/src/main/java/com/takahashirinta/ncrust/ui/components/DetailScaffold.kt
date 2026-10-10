@@ -47,6 +47,14 @@ import io.github.takahashirinta.kanesumi.controls.MetroProgressIndicator
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.MetroIcon
 import io.github.takahashirinta.kanesumi.core.theme.MetroText
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
+import androidx.palette.graphics.Palette
+import android.graphics.drawable.BitmapDrawable
+import coil.Coil
+import coil.request.ImageRequest
+import kotlinx.coroutines.Dispatchers
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import io.github.takahashirinta.kanesumi.structure.MetroTopScrim
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -70,6 +78,7 @@ val LocalDetailTransitionProgress = staticCompositionLocalOf<() -> Float> { { 0f
 fun DetailScaffold(
     title: String,
     subtitle: String? = null,
+    coverUrl: String? = null,
     onBack: () -> Unit,
     isLoading: Boolean = false,
     // 缓存兜底：调用方已有可立即渲染的内容时传 true，跳过全屏 loader。
@@ -83,10 +92,41 @@ fun DetailScaffold(
     val strings = LocalStrings.current
     val listState = rememberLazyListState()
     val density = LocalDensity.current
+    val context = LocalContext.current
     val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
     val screenHeightPx = remember(density, screenHeightDp) { with(density) { screenHeightDp.toPx() } }
     val maxTranslateYPx = remember(density) { with(density) { 96.dp.toPx() } }
+
+    // 动态封面色彩氛围提取：根据当前专辑/歌单封面提炼基调色，注入背景与吸顶栏
+    var dominantColor by remember(coverUrl) { mutableStateOf<Color?>(null) }
+    LaunchedEffect(coverUrl) {
+        if (coverUrl.isNullOrEmpty()) {
+            dominantColor = null
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                val req = ImageRequest.Builder(context)
+                    .data(CoverUrls.small(coverUrl))
+                    .allowHardware(false)
+                    .build()
+                val result = Coil.imageLoader(context).execute(req)
+                val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+                if (bitmap != null) {
+                    val palette = Palette.from(bitmap).generate()
+                    val colorInt = palette.getDominantColor(0)
+                    if (colorInt != 0) {
+                        withContext(Dispatchers.Main) {
+                            dominantColor = Color(colorInt)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // 异常静默回退默认背景
+            }
+        }
+    }
 
     // 渐变过渡计算：封面高度为 screenWidthDp，当滚动到标题位置时平滑过渡
     // 采用 lambda provider 避免在滚动时引发 DetailScaffold 及 LazyColumn 全局重组
@@ -145,6 +185,23 @@ fun DetailScaffold(
             }
             .background(LocalMetroColors.current.background)
     ) {
+        // 顶部动态封面氛围质感渐变层
+        val bgBase = LocalMetroColors.current.background
+        val accentTone = dominantColor?.let { lerp(bgBase, it, 0.32f) } ?: bgBase
+        if (dominantColor != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(screenWidthDp + 80.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to accentTone,
+                            0.55f to lerp(bgBase, accentTone, 0.45f),
+                            1f to bgBase
+                        )
+                    )
+            )
+        }
         val stateKey = when {
             error != null -> DetailScaffoldState.Error
             isLoading && !hasCachedContent -> DetailScaffoldState.Loading
@@ -230,7 +287,8 @@ fun DetailScaffold(
         )
 
         // 吸顶标题栏：常驻挂载以规避首次进入时的突发重组掉帧，透明度/位移/背景纯走 GPU 绘制阶段
-        val barBgColor = LocalMetroColors.current.background
+        val barBgBase = LocalMetroColors.current.background
+        val barBgColor = dominantColor?.let { lerp(barBgBase, it, 0.18f) } ?: barBgBase
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -251,7 +309,7 @@ fun DetailScaffold(
                 touchTargetDp = 56.dp
             ) {
                 MetroIcon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    imageVector = AppIcons.ArrowBack,
                     contentDescription = strings.back,
                     tint = LocalMetroColors.current.onBackground
                 )

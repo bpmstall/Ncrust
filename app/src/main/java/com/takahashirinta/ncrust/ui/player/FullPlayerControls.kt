@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.takahashirinta.ncrust.formatDuration
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import com.takahashirinta.ncrust.ui.i18n.LocalStrings
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.MetroIcon
@@ -156,7 +157,7 @@ fun FullPlayerControls(
                         contentAlignment = Alignment.Center
                     ) {
                         MetroIcon(
-                            imageVector = Icons.Default.Lyrics,
+                            imageVector = AppIcons.Lyrics,
                             contentDescription = strings.lyricsButton,
                             tint = if (lyricsUnavailable) LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.5f)
                             else if (showLyrics) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
@@ -173,7 +174,7 @@ fun FullPlayerControls(
                         contentAlignment = Alignment.Center
                     ) {
                         MetroIcon(
-                            imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                            imageVector = AppIcons.Queue,
                             contentDescription = strings.queueButton,
                             tint = if (showQueue) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
                             sizeDp = 24.dp
@@ -189,7 +190,7 @@ fun FullPlayerControls(
                         contentAlignment = Alignment.Center
                     ) {
                         MetroIcon(
-                            imageVector = if (isInLibrary) Icons.Default.Check else Icons.Default.Add,
+                            imageVector = if (isInLibrary) AppIcons.Check else AppIcons.Add,
                             contentDescription = strings.addToLibraryButton,
                             tint = if (isInLibrary) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
                             sizeDp = 24.dp
@@ -210,7 +211,7 @@ fun FullPlayerControls(
                         contentAlignment = Alignment.Center
                     ) {
                         MetroIcon(
-                            imageVector = Icons.Default.SkipPrevious,
+                            imageVector = AppIcons.SkipPrevious,
                             contentDescription = strings.prevButton,
                             tint = if (previousEnabled) LocalMetroColors.current.onBackground else LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.5f),
                             sizeDp = 28.dp
@@ -226,7 +227,7 @@ fun FullPlayerControls(
                         contentAlignment = Alignment.Center
                     ) {
                         MetroIcon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            imageVector = if (isPlaying) AppIcons.Pause else AppIcons.Play,
                             contentDescription = if (isPlaying) strings.pauseButton else strings.playButton,
                             tint = LocalMetroColors.current.onBackground,
                             sizeDp = 36.dp
@@ -242,7 +243,7 @@ fun FullPlayerControls(
                         contentAlignment = Alignment.Center
                     ) {
                         MetroIcon(
-                            imageVector = Icons.Default.SkipNext,
+                            imageVector = AppIcons.SkipNext,
                             contentDescription = strings.nextButton,
                             tint = LocalMetroColors.current.onBackground,
                             sizeDp = 28.dp
@@ -320,7 +321,7 @@ fun FullPlayerControls(
                 contentAlignment = Alignment.Center
             ) {
                 MetroIcon(
-                    imageVector = Icons.Default.SkipPrevious,
+                    imageVector = AppIcons.SkipPrevious,
                     contentDescription = strings.prevButton,
                     tint = if (previousEnabled) LocalMetroColors.current.onBackground else LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.5f),
                     sizeDp = sideIcon
@@ -346,7 +347,7 @@ fun FullPlayerControls(
                 contentAlignment = Alignment.Center
             ) {
                 MetroIcon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    imageVector = if (isPlaying) AppIcons.Pause else AppIcons.Play,
                     contentDescription = if (isPlaying) strings.pauseButton else strings.playButton,
                     tint = LocalMetroColors.current.primary,
                     sizeDp = playIcon
@@ -363,7 +364,7 @@ fun FullPlayerControls(
                 contentAlignment = Alignment.Center
             ) {
                 MetroIcon(
-                    imageVector = Icons.Default.SkipNext,
+                    imageVector = AppIcons.SkipNext,
                     contentDescription = strings.nextButton,
                     tint = LocalMetroColors.current.onBackground,
                     sizeDp = sideIcon
@@ -384,7 +385,7 @@ fun FullPlayerControls(
                 contentAlignment = Alignment.Center
             ) {
                 MetroIcon(
-                    imageVector = Icons.Default.Lyrics,
+                    imageVector = AppIcons.Lyrics,
                     contentDescription = strings.lyricsButton,
                     // 无歌词/未加载时置灰, 语义是该歌不可展开歌词
                     tint = if (lyricsUnavailable) LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.5f)
@@ -402,7 +403,7 @@ fun FullPlayerControls(
                 contentAlignment = Alignment.Center
             ) {
                 MetroIcon(
-                    imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                    imageVector = AppIcons.Queue,
                     contentDescription = strings.queueButton,
                     tint = if (showQueue) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
                     sizeDp = toggleIcon
@@ -419,7 +420,7 @@ fun FullPlayerControls(
             ) {
                 // 已在库 → 对号(按动移出); 不在库 → 加号(按动收藏)
                 MetroIcon(
-                    imageVector = if (isInLibrary) Icons.Default.Check else Icons.Default.Add,
+                    imageVector = if (isInLibrary) AppIcons.Check else AppIcons.Add,
                     contentDescription = strings.addToLibraryButton,
                     tint = if (isInLibrary) LocalMetroColors.current.primary else LocalMetroColors.current.onBackground,
                     sizeDp = toggleIcon

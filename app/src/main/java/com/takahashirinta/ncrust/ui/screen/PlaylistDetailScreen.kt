@@ -75,6 +75,7 @@ fun PlaylistDetailScreen(
     DetailScaffold(
         title = playlistName.ifEmpty { strings.playlistDetailTitle },
         subtitle = if (songs.isNotEmpty()) strings.trackCountSongs(songs.size) else null,
+        coverUrl = coverUrl,
         onBack = onBack,
         isLoading = isLoading,
         hasCachedContent = songs.isNotEmpty(),

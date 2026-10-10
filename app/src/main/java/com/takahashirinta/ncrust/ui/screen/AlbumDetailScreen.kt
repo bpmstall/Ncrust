@@ -101,6 +101,7 @@ fun AlbumDetailScreen(
     DetailScaffold(
         title = album?.name ?: strings.albumDetailTitle,
         subtitle = album?.artist?.name,
+        coverUrl = album?.picUrl,
         onBack = onBack,
         isLoading = isLoading,
         hasCachedContent = album != null,

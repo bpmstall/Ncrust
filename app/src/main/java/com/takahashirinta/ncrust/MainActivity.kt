@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
@@ -1199,10 +1200,10 @@ fun MainScreen(
     val navStrings = LocalStrings.current
     // 导航项在底部导航(窄屏)与左侧 sidebar(宽屏)之间共用。
     val navTabs = listOf(
-        Icons.Default.Home to navStrings.tabHome,
-        Icons.Default.LibraryMusic to navStrings.tabLibrary,
-        Icons.Default.Search to navStrings.tabSearch,
-        Icons.Default.Person to navStrings.tabUser,
+        AppIcons.NavHome to navStrings.tabHome,
+        AppIcons.NavLibrary to navStrings.tabLibrary,
+        AppIcons.NavSearch to navStrings.tabSearch,
+        AppIcons.NavUser to navStrings.tabUser,
     )
     val onNavSelected: (Int) -> Unit = { tab ->
         selectedTab = tab
