@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,6 +84,12 @@ fun LyricsView(
             anchorNanos = System.nanoTime()
         }
     }
+    // 外推只在"睡到下一行"时才读锚点。切歌后旧外推循环被取消，但新循环的
+    // 第一次醒来可能在新采样到达之前，那时锚点还停在切歌瞬间读到的旧进度上，
+    // 新歌歌词就会按上一首的时间戳高亮。采样每次到达都记下锤点，外推醒来时
+    // 发现锤点变了就先对齐，不再用旧锚点推下一行。
+    var sampleStamp by remember(songId) { mutableIntStateOf(0) }
+    var consumedStamp by remember(songId) { mutableIntStateOf(0) }
 
     // 行时间戳(升序),把"下一次跨行"算成精确唤醒时刻。
     val timestamps = remember(lyrics) { LongArray(lyrics.size) { lyrics[it].timeMs } }
@@ -92,6 +99,7 @@ fun LyricsView(
         snapshotFlow { positionState.value }.collect { pos ->
             anchor.anchorPosMs = pos
             anchor.anchorNanos = System.nanoTime()
+            sampleStamp++
             // 关键：若采样位置回退（切歌、倒退 seek、循环重播）或发生大步跳跃，
             // 立即强行对齐 displayPosition，彻底消除高位旧值锁死歌词的 Bug。
             if (shouldSnapLyricPosition(displayPosition, pos)) {
@@ -120,6 +128,11 @@ fun LyricsView(
             return@LaunchedEffect
         }
         while (true) {
+            // 睡着期间来过新采样：旧锚点作废，先对齐再算下一行。
+            if (consumedStamp != sampleStamp) {
+                consumedStamp = sampleStamp
+                displayPosition = anchor.anchorPosMs
+            }
             val nowMs =
                 anchor.anchorPosMs + (System.nanoTime() - anchor.anchorNanos) / 1_000_000L
             val next = nextLineBoundaryAfter(timestamps, nowMs)
@@ -170,15 +183,15 @@ fun LyricsView(
             futureLineColor = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.4f),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 12.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp),
         )
 
         if (lyrics.isNotEmpty()) {
-        // 上下边缘淡出,让歌词从黑里浮出来(沿用原实现)
+        // 上下边缘淡出,让歌词从黑里浮出来(上下对称靠近边框)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(28.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(listOf(LocalMetroColors.current.background, Color.Transparent))
@@ -187,7 +200,7 @@ fun LyricsView(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                .height(28.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(listOf(Color.Transparent, LocalMetroColors.current.background))

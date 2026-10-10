@@ -573,13 +573,19 @@ fun MainScreen(
 
     fun playNext() {
         if (playbackQueue.isEmpty()) return
+        val activeIndex = currentSong?.id?.let { sid ->
+            playbackQueue.indexOfFirst { it.id == sid }.takeIf { it >= 0 }
+        } ?: currentQueueIndex.coerceIn(0, (playbackQueue.size - 1).coerceAtLeast(0))
+
         when (playMode) {
-            QueueModes.SINGLE -> playerViewModel.seekTo(0)
+            QueueModes.SINGLE -> {
+                // 用户主动按"下一首": 单曲循环模式下切到队列中的下一首
+                val target = if (activeIndex < playbackQueue.size - 1) activeIndex + 1 else 0
+                playFromQueue(target)
+            }
             QueueModes.SHUFFLE -> {
                 if (shuffledIndices.isEmpty() || shuffledPosition >= shuffledIndices.size - 1) {
                     // 乱序一轮播完后按"下一首": 生成**全新**乱序并播新序列首曲。
-                    // 旧实现把当前曲固定为下一项(shuffledIndices[0]=current),
-                    // 队列尾按下一首=重播当前曲, 观感就是"单曲循环/进度跳回开头"。
                     val fresh = playbackQueue.indices.shuffled()
                     shuffledIndices = fresh
                     shuffledPosition = 0
@@ -591,8 +597,8 @@ fun MainScreen(
             }
             QueueModes.LINE -> {
                 // 顺序线性：队列尾自然结束后不再循环, 定位到首曲(不自动续播)
-                if (currentQueueIndex < playbackQueue.size - 1) {
-                    playFromQueue(currentQueueIndex + 1)
+                if (activeIndex < playbackQueue.size - 1) {
+                    playFromQueue(activeIndex + 1)
                 } else {
                     currentQueueIndex = 0
                     currentSong = playbackQueue.firstOrNull()
@@ -602,37 +608,50 @@ fun MainScreen(
             }
             QueueModes.INFINITY -> {
                 // 队列尾 → FM 电台式相似歌曲续播
-                if (currentQueueIndex < playbackQueue.size - 1) {
-                    playFromQueue(currentQueueIndex + 1)
+                if (activeIndex < playbackQueue.size - 1) {
+                    playFromQueue(activeIndex + 1)
                 } else {
                     launchInfinity()
                 }
             }
             else -> { // CYCLE
-                if (currentQueueIndex < playbackQueue.size - 1) {
-                    playFromQueue(currentQueueIndex + 1)
-                } else {
-                    playFromQueue(0)
-                }
+                val target = if (activeIndex < playbackQueue.size - 1) activeIndex + 1 else 0
+                playFromQueue(target)
             }
         }
     }
 
     fun playPrevious() {
         if (playbackQueue.isEmpty()) return
-        // FM 电台(INFINITY)不可回退：上一首禁用
-        if (playMode == QueueModes.INFINITY) return
+        // FM 电台(INFINITY)在首曲时不可回退，但在已有历史时允许回退
+        if (playMode == QueueModes.INFINITY && currentQueueIndex <= 0) return
+
+        val activeIndex = currentSong?.id?.let { sid ->
+            playbackQueue.indexOfFirst { it.id == sid }.takeIf { it >= 0 }
+        } ?: currentQueueIndex.coerceIn(0, (playbackQueue.size - 1).coerceAtLeast(0))
+
         when (playMode) {
-            QueueModes.SINGLE -> playerViewModel.seekTo(0)
+            QueueModes.SINGLE -> {
+                // 用户主动按"上一首": 单曲循环模式下切到队列中的上一首
+                val target = if (activeIndex > 0) activeIndex - 1 else playbackQueue.size - 1
+                playFromQueue(target)
+            }
             QueueModes.SHUFFLE -> {
-                if (shuffledPosition > 0) {
-                    shuffledPosition--
+                if (shuffledIndices.isNotEmpty()) {
+                    shuffledPosition = if (shuffledPosition > 0) shuffledPosition - 1 else shuffledIndices.size - 1
                     playFromQueue(shuffledIndices[shuffledPosition])
+                } else {
+                    generateShuffledIndices()
+                    if (shuffledIndices.isNotEmpty()) {
+                        shuffledPosition = (shuffledIndices.size - 1).coerceAtLeast(0)
+                        playFromQueue(shuffledIndices[shuffledPosition])
+                    }
                 }
             }
-            else -> playFromQueue(
-                if (currentQueueIndex > 0) currentQueueIndex - 1 else playbackQueue.size - 1
-            )
+            else -> {
+                val target = if (activeIndex > 0) activeIndex - 1 else playbackQueue.size - 1
+                playFromQueue(target)
+            }
         }
     }
 

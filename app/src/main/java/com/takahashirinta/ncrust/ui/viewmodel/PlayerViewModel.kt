@@ -20,6 +20,7 @@ import com.takahashirinta.ncrust.player.NowPlaying
 import com.takahashirinta.ncrust.player.PlayerUiState
 import com.takahashirinta.ncrust.player.PlayerUiStore
 import com.takahashirinta.ncrust.player.PlayReporter
+import com.takahashirinta.ncrust.player.ownsLyricsRequest
 import com.takahashirinta.ncrust.player.SongUrlFetcher
 import com.takahashirinta.ncrust.player.SongUrlResult
 import kotlinx.coroutines.*
@@ -274,6 +275,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
      * PlayerCard 自动切回歌词视图; 确无歌词则由大封面盖住。
      */
     private fun resetLyricsForNewSong() {
+        lyricsRequestGeneration++
+        lyricsFetchingSongId = -1L
         lyrics.value = emptyList()
         translatedLyrics.value = emptyList()
         lyricsLoading.value = true
@@ -309,6 +312,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         latestPlaySongId = songId
         needsPreload.value = false
         refreshGaplessSetting()
+        // 选歌即切换歌词所有权：URL 还在获取时旧歌词响应也不能再写回。
+        currentSongId.value = songId
+        resetLyricsForNewSong()
         // 切歌立即重置进度，避免上一首的高位进度（如 3:20）残留在新歌里导致歌词定位错乱/冻结
         currentPosition.value = 0L
         progress.value = 0f
@@ -326,15 +332,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             it.requestedLevel == selectedQuality && System.currentTimeMillis() - it.timestamp <= CACHE_TTL_MS
         }
         PlayerUiStore.onSongChanged(NowPlaying(songId, title, artist, artworkUrl, ""))
+        currentSongId.value = songId
+        currentSongName.value = title
+        currentSongArtist.value = artist
+        currentSongArtwork.value = artworkUrl
         if (cachedEntry != null) {
             lastPlayedLevel = cachedEntry.actualLevel
             val actualIdx = qualityApiLevels.indexOf(cachedEntry.actualLevel).coerceAtLeast(0)
             currentQualityIndex.value = actualIdx
-            resetLyricsForNewSong()
-            currentSongId.value = songId
-            currentSongName.value = title
-            currentSongArtist.value = artist
-            currentSongArtwork.value = artworkUrl
             val intent = Intent(getApplication(), PlaybackService::class.java).apply {
                 putExtra("url", cachedEntry.url)
                 putExtra("title", title)
@@ -369,11 +374,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 // 把同一首歌重播一遍 —— 就是"听起来像拖带"的卡顿。
                 if (fetchVersion != songPlayVersion) return@launch
                 val actualIdx = qualityApiLevels.indexOf(result.actualLevel).coerceAtLeast(0)
-                resetLyricsForNewSong()
-                // 歌词请求异步化: 旧实现在这里顺序等待(失败退避最坏 3s+),
-                // 开播被歌词请求拖住, 慢网络/风控下"点了没反应"。切到 launch 后
-                // 播放立即开始, 歌词就绪了再自动切回歌词视图。
-                viewModelScope.launch { fetchLyrics(songId) }
+                // 先原子地发布当前曲目并作废旧歌词请求，再并发取歌词与开播。
                 withContext(Dispatchers.Main) {
                     lastPlayedLevel = result.actualLevel
                     currentQualityIndex.value = actualIdx
@@ -382,6 +383,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     currentSongName.value = title
                     currentSongArtist.value = artist
                     currentSongArtwork.value = artworkUrl
+                    resetLyricsForNewSong()
+                    viewModelScope.launch { fetchLyrics(songId) }
 
                     val intent = Intent(getApplication(), PlaybackService::class.java).apply {
                         putExtra("url", result.url)
@@ -542,35 +545,42 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { fetchLyrics(songId) }
     }
 
-    // 同一首歌的歌词请求只允许一个在途(playSong / onSongTransitioned / 冷启动恢复
-    // 会并发发起, 不打去重会瞬间打 3×n 个请求, 触发服务端限流反而更拉胯)。
+    // 同一首歌的歌词请求只允许一个在途；generation 防 A→B→A 和重试时的旧请求回写。
     private var lyricsFetchingSongId = -1L
+    private var lyricsRequestGeneration = 0L
 
     private suspend fun fetchLyrics(songId: Long) {
         if (lyricsFetchingSongId == songId) return
+        val requestGeneration = ++lyricsRequestGeneration
         lyricsFetchingSongId = songId
         lyricsLoading.value = true
+        fun ownsRequest() = ownsLyricsRequest(
+            requestGeneration, lyricsRequestGeneration, songId, currentSongId.value
+        )
         try {
             // 先查本地缓存：命中则直接呈现，不再打网络（歌词几乎不变）。
             // 这是进程被杀重进时歌词能秒回、且不受冷启动风控/限流影响的关键。
             val cached = LyricsCache.get(getApplication(), songId)
             if (cached != null) {
-                if (currentSongId.value == songId) {
-                    // 解析是 CPU 活(逐行正则), 放 Default 上跑, 别让主线程在切歌瞬间
-                    // 一边处理重组一边解 LRC。
-                    if (cached.lrc.isNotEmpty()) {
-                        lyrics.value = withContext(Dispatchers.Default) { LrcParser.parse(cached.lrc) }
-                        lyricsSongId.value = songId
-                    } else {
-                        // 缓存里就是"确无歌词"，保持按钮置灰语义
-                        lyricsNoContentSongId.value = songId
-                    }
-                    translatedLyrics.value =
-                        if (cached.tlyric.isNotEmpty()) {
-                            withContext(Dispatchers.Default) { LrcParser.parse(cached.tlyric) }
+                if (ownsRequest()) {
+                    // 先在后台完整解析，再重新校验请求所有权后一次性提交。
+                    val parsedLyrics = if (cached.lrc.isNotEmpty()) {
+                        withContext(Dispatchers.Default) { LrcParser.parse(cached.lrc) }
+                    } else emptyList()
+                    val parsedTranslation = if (cached.tlyric.isNotEmpty()) {
+                        withContext(Dispatchers.Default) { LrcParser.parse(cached.tlyric) }
+                    } else emptyList()
+                    if (ownsRequest()) {
+                        lyrics.value = parsedLyrics
+                        translatedLyrics.value = parsedTranslation
+                        if (cached.lrc.isNotEmpty()) {
+                            lyricsSongId.value = songId
+                            lyricsNoContentSongId.value = -1L
                         } else {
-                            emptyList()
+                            // 缓存里就是"确无歌词"，保持按钮置灰语义
+                            lyricsNoContentSongId.value = songId
                         }
+                    }
                 }
                 Log.d("PlayerViewModel", "fetchLyrics cache hit id=$songId lrc=${cached.lrc.length}")
                 return
@@ -597,25 +607,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     if (code == 200) {
                         LyricsCache.put(getApplication(), songId, lrcText, tlyricText)
                     }
-                    // 只在本请求仍是"当前歌"时写入——恢复路径与 playSong 的并发请求
-                    // 返回乱序时, 旧请求不得覆盖新歌的歌词/译文
-                    if (currentSongId.value == songId && code == 200) {
-                        // 同上: 解析放 Default, 避免网络返回后在主线程解 LRC。
-                        if (lrcText.isNotEmpty()) {
-                            lyrics.value = withContext(Dispatchers.Default) { LrcParser.parse(lrcText) }
-                            // 有歌词：标记为"当前歌的歌词就绪"（供 UI 自动回切歌词视图）
-                            lyricsSongId.value = songId
-                            lyricsNoContentSongId.value = -1L
-                        } else {
-                            // lrc 为空（确无歌词）: 标记当前歌，UI 置灰歌词按钮。
-                            lyricsNoContentSongId.value = songId
-                        }
-                        translatedLyrics.value =
-                            if (tlyricText.isNotEmpty()) {
-                                withContext(Dispatchers.Default) { LrcParser.parse(tlyricText) }
+                    // 解析可能挂起；切歌期间generation/ID都会改变，因此解析后再判一次所有权。
+                    if (code == 200 && ownsRequest()) {
+                        val parsedLyrics = if (lrcText.isNotEmpty()) {
+                            withContext(Dispatchers.Default) { LrcParser.parse(lrcText) }
+                        } else emptyList()
+                        val parsedTranslation = if (tlyricText.isNotEmpty()) {
+                            withContext(Dispatchers.Default) { LrcParser.parse(tlyricText) }
+                        } else emptyList()
+                        if (ownsRequest()) {
+                            lyrics.value = parsedLyrics
+                            translatedLyrics.value = parsedTranslation
+                            if (lrcText.isNotEmpty()) {
+                                // 有歌词：标记为"当前歌的歌词就绪"（供 UI 自动回切歌词视图）
+                                lyricsSongId.value = songId
+                                lyricsNoContentSongId.value = -1L
                             } else {
-                                emptyList()
+                                // lrc 为空（确无歌词）: 标记当前歌，UI 置灰歌词按钮。
+                                lyricsNoContentSongId.value = songId
                             }
+                        }
                     }
                     Log.d(
                         "PlayerViewModel",
@@ -636,7 +647,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             // 只有本次请求仍是"当前在途"时才清加载态。旧歌请求的 finally 若在
             // 新歌请求在途时无条件清 lyricsLoading=false, 会让 UI 误判新歌"加载已结束
             // 且无歌词"→ 关歌词回封面, 表现为"听几首后歌词莫名不见"。
-            if (lyricsFetchingSongId == songId) {
+            if (ownsRequest()) {
                 lyricsLoading.value = false
                 lyricsFetchingSongId = -1L
             }
@@ -653,6 +664,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         lyricsNoContentSongId.value = -1L
         lyricsLoading.value = true
         lyricsFetchingSongId = -1L
+        lyricsRequestGeneration++
         viewModelScope.launch { fetchLyrics(songId) }
     }
 

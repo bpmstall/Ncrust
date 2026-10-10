@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import io.github.takahashirinta.kanesumi.controls.MetroDialog
 import io.github.takahashirinta.kanesumi.controls.MetroDivider
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
@@ -251,7 +252,7 @@ fun FullPlayerControls(
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .background(LocalMetroColors.current.surfaceVariant)
+                        .background(LocalMetroColors.current.surfaceVariant, RoundedCornerShape(6.dp))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() }
@@ -280,10 +281,7 @@ fun FullPlayerControls(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .background(
-                        LocalMetroColors.current.surfaceVariant,
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                    )
+                    .background(LocalMetroColors.current.surfaceVariant, RoundedCornerShape(6.dp))
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
@@ -334,12 +332,12 @@ fun FullPlayerControls(
                     .size(playBtn)
                     .background(
                         LocalMetroColors.current.surfaceVariant,
-                        shape = androidx.compose.foundation.shape.CircleShape
+                        shape = RoundedCornerShape(12.dp)
                     )
                     .border(
                         1.dp,
                         LocalMetroColors.current.divider.copy(alpha = 0.5f),
-                        androidx.compose.foundation.shape.CircleShape
+                        RoundedCornerShape(12.dp)
                     )
                     .clickable {
                         tick()

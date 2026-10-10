@@ -99,12 +99,14 @@ fun AlbumDetailScreen(
     }
 
     DetailScaffold(
-        title = strings.albumDetailTitle,
+        title = album?.name ?: strings.albumDetailTitle,
+        subtitle = album?.artist?.name,
         onBack = onBack,
         isLoading = isLoading,
         hasCachedContent = album != null,
         error = error,
         onRetry = null,
+        onPlayAll = if (songItems.isNotEmpty()) ({ showPlayAllDialog = true }) else null,
         header = {
             DetailHeader(
                 coverUrl = album?.picUrl,

@@ -235,6 +235,9 @@ class PlaybackService : MediaLibraryService() {
                 // 不可能再出现"元数据跳了音源没跳"。applyNowPlaying 内部已负责
                 // updatePlaybackState()/updateNotify()，两条分支共用，不再重复调用。
                 applyNowPlaying(mediaItem)
+                // 自动切歌（AUTO: 播放结束自然切到预载曲目）才触发 onSongTransitioned，
+                // 用于驱动 UI 推进队列游标。手动切歌(SEEK/setMediaItem)由调用方自身管理队列索引，
+                // 不能在这里回调，否则会触发 LaunchedEffect(songTransitioned) 误把索引前进到下一首。
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                     val songId = mediaItem.mediaId.toLongOrNull() ?: -1L
                     val extras = mediaItem.mediaMetadata.extras

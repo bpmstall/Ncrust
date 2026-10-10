@@ -84,7 +84,28 @@ fun MainNavGraph(
 
         composable(
             route = NavRoutes.ALBUM,
-            arguments = listOf(navArgument("albumId") { type = NavType.LongType })
+            arguments = listOf(navArgument("albumId") { type = NavType.LongType }),
+            enterTransition = {
+                slideIntoContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Up,
+                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                ) + fadeIn(animationSpec = tween(200))
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(200))
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            }
         ) { backStackEntry ->
             val albumId = backStackEntry.arguments?.getLong("albumId") ?: return@composable
             AlbumDetailScreen(
@@ -102,7 +123,28 @@ fun MainNavGraph(
 
         composable(
             route = NavRoutes.ARTIST,
-            arguments = listOf(navArgument("artistId") { type = NavType.LongType })
+            arguments = listOf(navArgument("artistId") { type = NavType.LongType }),
+            enterTransition = {
+                slideIntoContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Up,
+                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                ) + fadeIn(animationSpec = tween(200))
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(200))
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            }
         ) { backStackEntry ->
             val artistId = backStackEntry.arguments?.getLong("artistId") ?: return@composable
             ArtistDetailScreen(
@@ -122,7 +164,28 @@ fun MainNavGraph(
                 navArgument("playlistId") { type = NavType.LongType },
                 navArgument("playlistName") { type = NavType.StringType; defaultValue = "" },
                 navArgument("playlistCoverUrl") { type = NavType.StringType; defaultValue = "" }
-            )
+            ),
+            enterTransition = {
+                slideIntoContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Up,
+                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                ) + fadeIn(animationSpec = tween(200))
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(200))
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(180))
+            }
         ) { backStackEntry ->
             val playlistId = backStackEntry.arguments?.getLong("playlistId") ?: return@composable
             // ← 解码

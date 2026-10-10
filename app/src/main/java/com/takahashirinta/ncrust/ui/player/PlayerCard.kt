@@ -11,10 +11,8 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
@@ -24,13 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -45,12 +43,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.Coil
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Scale
 import com.takahashirinta.ncrust.library.LibraryManager
 import com.takahashirinta.ncrust.network.SongItem
 import com.takahashirinta.ncrust.network.CoverUrls
@@ -173,21 +174,28 @@ fun PlayerCard(
     var cardRootOrigin by remember { mutableStateOf(Offset.Zero) }
     var wideCoverCenter by remember { mutableStateOf(Offset.Zero) }
     var wideCoverSizePx by remember { mutableStateOf(0f) }
-    // 封面落点跟封面区实测走。用整屏高度反推会在切歌/展开时和控件错位。
+    // 窄屏大封面落点跟封面区实测走。用整屏高度反推会在切歌/展开时和控件错位。
     var portraitCoverCenter by remember { mutableStateOf(Offset.Zero) }
     val portraitCoverSidePad = with(density) { 32.dp.toPx() }
+    var portraitCoverAvailableHeightPx by remember { mutableFloatStateOf(0f) }
     val coverSizePx = if (isWidePlayer) {
         // 实测前用兜底尺寸，避免首帧 1px 让 Coil 按 1px 解码成纯色（重进时尤为明显）。
         if (wideCoverSizePx > 0f) wideCoverSizePx
         else minOf(screenWidthPx * 0.4f, screenHeightPx * 0.5f)
-    } else (screenWidthPx - portraitCoverSidePad * 2f).coerceAtLeast(100f)
+    } else minOf(
+        screenWidthPx - portraitCoverSidePad * 2f,
+        portraitCoverAvailableHeightPx.takeIf { it > 0f } ?: screenHeightPx
+    ).coerceAtLeast(0f)
     val coverSizeDp = with(density) { coverSizePx.toDp() }
-    val miniCoverHalfPx = with(density) { 28.dp.toPx() }
+    // 外层迷你栏总高 56dp，扣除上下 4dp 后内容槽为 48dp；封面严格贴合槽位。
+    val miniBarPadPx = with(density) { 12.dp.toPx() }
+    val miniBarInnerPx = with(density) { 6.dp.toPx() }
+    val miniCoverHalfPx = with(density) { 24.dp.toPx() }
     val miniScale = miniCoverHalfPx * 2f / coverSizePx
     val statusBarPx = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         .let { with(density) { it.toPx() } }
-    val miniCoverCenterX = with(density) { 12.dp.toPx() } + miniCoverHalfPx
-    val miniCoverCenterY = statusBarPx + with(density) { 6.dp.toPx() } + miniCoverHalfPx
+    val miniCoverCenterX = miniBarPadPx + miniBarInnerPx + miniCoverHalfPx
+    val miniCoverCenterY = statusBarPx + with(density) { 4.dp.toPx() + 24.dp.toPx() }
     val largeCoverCenterX = if (isWidePlayer) wideCoverCenter.x
         else portraitCoverCenter.x.takeIf { it > 0f } ?: screenWidthPx / 2f
     val topBarBottomPx = statusBarPx + with(density) { 56.dp.toPx() }
@@ -198,16 +206,12 @@ fun PlayerCard(
 
     // 完全收起时才激活迷你播放栏；derivedStateOf 将重组限制在阈值穿越处
     val miniBarEnabled by remember { derivedStateOf { progress.value < 0.01f } }
+    val expandedEnough by remember { derivedStateOf { progress.value > 0.05f } }
     val miniBarInteractionSource = remember { MutableInteractionSource() }
     // 完全展开时才激活收起按钮
     val dismissEnabled by remember { derivedStateOf { progress.value > 0.99f } }
-    // 展开态子树常挂载（无 gate）：LyricsView / QueueView / FullPlayerControls / 大封面
-    // 信息在 MainScreen 首次 composition 时即挂载，交互只切 graphicsLayer alpha，不再
-    // 走 mount/dispose。这是"Apple Music 手感"的关键——原生 View 系统里 player subview
-    // 是 app 启动就构建好、隐藏用 visibility=GONE 的；我们此前用 if (expandedEnough) 条件
-    // 挂载来省折叠态 layout 成本，但把构造成本压到了首次跨阈值那一帧，压不进单帧就必然卡。
-    // 常挂载的代价：折叠态 LazyColumn 仍走一次 layout（懒渲染，实际每帧 1-3ms），交换
-    // 首次 expand 永远不卡。冷启动那一次成本由 Splash + AppWarmup 兜底吸收。
+    // AGENTS 约束：进度低于 0.05 时卸载歌词、队列和完整控件；封面 overlay 仍独立保留。
+    // 这样收起态不会让隐藏面板继续占布局或命中触摸区域。
 
     // lyricAnimProgress：0 = 大封面，1 = 小封面；驱动封面缩放 + 内容淡入淡出
     // queueSlideProgress：0 = 歌词位置，1 = 列表位置；仅 b↔c 时动画，其他时 snap
@@ -236,29 +240,24 @@ fun PlayerCard(
     val lyricsNoContent = lyricsNoContentSongId == song?.id && lyrics.isEmpty()
     val lyricsUnavailable = lyricsNoContent && !lyricsLoading
 
-    // 每首歌只自动切到歌词视图一次；用户手动关掉歌词后，不再被自动打开
-    // （否则关歌词时 showLyrics 被 effect 立刻改回 true，wideSplit 回不到 0，
-    //  表现为"封面/控件都不动"）。
-    var autoSwitchedForSong by remember(song?.id) { mutableStateOf(false) }
-
     LaunchedEffect(song?.id, lyricsReady, lyricsLoading, showQueue) {
         when {
-            showQueue -> {
-                // 用户在队列：不打扰, 放弃自动回切
-            }
-            // 歌词就绪 → 首次自动切到歌词视图（封面缩小/左移）
-            lyricsReady -> {
-                if (!autoSwitchedForSong) {
-                    autoSwitchedForSong = true
-                    if (!showLyrics) showLyrics = true
+            showQueue -> {}
+            lyricsLoading -> {}
+            // 确无歌词且在歌词页 → 回大封面
+            else -> if (showLyrics && lyricsNoContent) showLyrics = false
+        }
+    }
+
+    // 折叠态重置为大封面视图，保证再次展开时默认停在封面界面
+    LaunchedEffect(Unit) {
+        snapshotFlow { progress.value }
+            .collect { p ->
+                if (p == 0f) {
+                    showLyrics = false
+                    showQueue = false
                 }
             }
-            // 加载中：保持当前视图，不清空也不切回大封面 —— 切歌时封面完全不动。
-            lyricsLoading -> {
-            }
-            // 确无歌词（加载完成且为空）→ 回大封面
-            else -> if (showLyrics) showLyrics = false
-        }
     }
 
     LaunchedEffect(showLyrics, showQueue) {
@@ -369,8 +368,9 @@ fun PlayerCard(
                         accY += change.position.y - change.previousPosition.y
                         accX += change.position.x - change.previousPosition.x
                         if (abs(accY) > slop || abs(accX) > horizontalSlop) {
-                            // 展开态才认横向：折叠态没有歌词/队列可切，横滑不该吞掉点击。
-                            horizontal = progress.value > 0.9f && abs(accX) > horizontalSlop && abs(accX) > abs(accY)
+                            val isHorizontalGesture = abs(accX) > horizontalSlop && abs(accX) > abs(accY)
+                            // 展开态认横向切换 封面/歌词/队列；折叠态认横向左右滑动切歌
+                            horizontal = (progress.value > 0.9f || progress.value < 0.2f) && isHorizontalGesture
                             // 面板内起手又判成纵向：整段让给列表滚动，不消费。
                             if (startedOverPanel && !horizontal) return@awaitEachGesture
                             dragging = true
@@ -389,25 +389,34 @@ fun PlayerCard(
                             totalX += change.position.x - change.previousPosition.x
                         }
                         // 48dp：比点按宽，比翻页窄。
-                        // 左滑 封面→歌词→队列；右滑 队列→歌词→封面。一次只走一页。
                         val threshold = 48.dp.toPx()
                         if (abs(totalX) > threshold) {
-                            if (totalX < 0f) {
-                                when {
-                                    showQueue -> {}
-                                    showLyrics -> {
-                                        showQueue = true
-                                        showLyrics = false
-                                    }
-                                    else -> showLyrics = true
+                            if (progress.value < 0.2f) {
+                                // 折叠态未展开歌曲栏：左右滑动切歌 (左滑下一首，右滑上一首)
+                                if (totalX < 0f) {
+                                    onPlayNext()
+                                } else {
+                                    onPlayPrevious()
                                 }
                             } else {
-                                when {
-                                    showQueue -> {
-                                        showQueue = false
-                                        showLyrics = true
+                                // 展开态：左滑 封面→歌词→队列；右滑 队列→歌词→封面。一次只走一页。
+                                if (totalX < 0f) {
+                                    when {
+                                        showQueue -> {}
+                                        showLyrics -> {
+                                            showQueue = true
+                                            showLyrics = false
+                                        }
+                                        else -> showLyrics = true
                                     }
-                                    showLyrics -> showLyrics = false
+                                } else {
+                                    when {
+                                        showQueue -> {
+                                            showQueue = false
+                                            showLyrics = true
+                                        }
+                                        showLyrics -> showLyrics = false
+                                    }
                                 }
                             }
                         }
@@ -465,7 +474,6 @@ fun PlayerCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .zIndex(0f)
                 .graphicsLayer {
                     translationY = statusBarPx * (1f - progress.value)
                 }
@@ -508,7 +516,7 @@ fun PlayerCard(
                 .zIndex(2f)
                 .systemBarsPadding()
         ) {
-            if (hasSong) {
+            if (hasSong && expandedEnough) {
                 val s = song!!
 
                 // 底部播放控件（窄屏整宽 / 宽屏左栏共用）。常挂载，alpha 只在 draw 阶段调。
@@ -561,8 +569,8 @@ fun PlayerCard(
                             }
                         },
                         lyricsUnavailable = lyricsUnavailable,
-                        previousEnabled = playMode != QueueModes.INFINITY,
-                        compact = (showLyrics || showQueue) && prefs.getBoolean("lyrics_compact_controls", true),
+                        previousEnabled = playMode != QueueModes.INFINITY || currentQueueIndex > 0,
+                        compact = false,
                         landscape = isWidePlayer
                     )
                 }
@@ -575,56 +583,93 @@ fun PlayerCard(
                         // alpha 用阶梯而非交叉淡化: 切换时源面板瞬时隐藏、目标面板单层全宽滑入,
                         // 每帧只合成一个面板——原先 260ms 内两个全屏面板同时 alpha 混合是
                         // 低端机上左右切换动作的主要 GPU 成本。
-                        if (showLyrics) Box(
+                        if (showLyrics) Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
                                     alpha = lyricAnimProgress.value
-                                    translationX = -queueSlideProgress.value * screenWidthPx
+                                    translationX = -queueSlideProgress.value * size.width
                                 }
                         ) {
-                            // 切歌时旧歌词渐隐、新歌词渐显（Sokuou UWP 缓动）。
-                            // key = song?.id：同一首歌的歌词更新不触发 Crossfade, 只换内容。
-                            Crossfade(
-                                targetState = song?.id,
-                                animationSpec = SokuouTweens.CoverFade,
-                                label = "LyricsCrossfade"
-                            ) { _ ->
-                                val isBuffering by playerViewModel.isBuffering.collectAsState()
-                                val fontSizeIdx = remember { prefs.getInt("lyrics_font_size", 1) }
-                                val fontSize = when (fontSizeIdx) {
-                                    0 -> 22.sp
-                                    1 -> 26.sp
-                                    2 -> 30.sp
-                                    3 -> 34.sp
-                                    else -> 26.sp
+                            if (!isWidePlayer) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 24.dp, end = 56.dp, top = 8.dp, bottom = 8.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = onSongInfoClick
+                                        )
+                                ) {
+                                    MetroText(
+                                        s.name,
+                                        color = LocalMetroColors.current.onBackground,
+                                        style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    val artistsText = s.artists?.joinToString(" / ") { it.name }
+                                    if (!artistsText.isNullOrBlank()) {
+                                        Spacer(Modifier.height(2.dp))
+                                        MetroText(
+                                            artistsText,
+                                            color = LocalMetroColors.current.primary,
+                                            style = TextStyle(fontSize = 13.sp),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
-                                val lineHeight = when (fontSizeIdx) {
-                                    0 -> 30.sp
-                                    1 -> 36.sp
-                                    2 -> 42.sp
-                                    3 -> 48.sp
-                                    else -> 36.sp
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                            ) {
+                                // 切歌时旧歌词渐隐、新歌词渐显（Sokuou UWP 缓动）。
+                                // key = song?.id：同一首歌的歌词更新不触发 Crossfade, 只换内容。
+                                Crossfade(
+                                    targetState = song?.id,
+                                    animationSpec = SokuouTweens.CoverFade,
+                                    label = "LyricsCrossfade"
+                                ) { _ ->
+                                    val isBuffering by playerViewModel.isBuffering.collectAsState()
+                                    val fontSizeIdx = remember { prefs.getInt("lyrics_font_size", 1) }
+                                    val fontSize = when (fontSizeIdx) {
+                                        0 -> 22.sp
+                                        1 -> 26.sp
+                                        2 -> 30.sp
+                                        3 -> 34.sp
+                                        else -> 26.sp
+                                    }
+                                    val lineHeight = when (fontSizeIdx) {
+                                        0 -> 30.sp
+                                        1 -> 36.sp
+                                        2 -> 42.sp
+                                        3 -> 48.sp
+                                        else -> 36.sp
+                                    }
+                                    val centerAligned = remember { prefs.getBoolean("lyrics_align_center", false) }
+                                    LyricsView(
+                                        songId = song?.id ?: -1L,
+                                        lyrics = lyrics,
+                                        translatedLyrics = translatedLyrics,
+                                        showTranslation = showLyricsTranslation,
+                                        positionFlow = playerViewModel.positionStateMs,
+                                        isPlaying = isPlaying,
+                                        isBuffering = isBuffering,
+                                        isVisible = true,
+                                        forcedLocateTrigger = lyricLocateTrigger,
+                                        onSeekToMs = { ms -> playerViewModel.seekTo(ms) },
+                                        enabled = lyricsEnabled && cardExpandedForInput,
+                                        onUserScrolled = {},
+                                        isLoading = lyricsLoading,
+                                        fontSize = fontSize,
+                                        lineHeight = lineHeight,
+                                        centerAligned = centerAligned,
+                                    )
                                 }
-                                val centerAligned = remember { prefs.getBoolean("lyrics_align_center", false) }
-                                LyricsView(
-                                    songId = song?.id ?: -1L,
-                                    lyrics = lyrics,
-                                    translatedLyrics = translatedLyrics,
-                                    showTranslation = showLyricsTranslation,
-                                    positionFlow = playerViewModel.positionStateMs,
-                                    isPlaying = isPlaying,
-                                    isBuffering = isBuffering,
-                                    isVisible = true,
-                                    forcedLocateTrigger = lyricLocateTrigger,
-                                    onSeekToMs = { ms -> playerViewModel.seekTo(ms) },
-                                    enabled = lyricsEnabled && cardExpandedForInput,
-                                    onUserScrolled = {},
-                                    isLoading = lyricsLoading,
-                                    fontSize = fontSize,
-                                    lineHeight = lineHeight,
-                                    centerAligned = centerAligned,
-                                )
                             }
                         }
 
@@ -638,13 +683,13 @@ fun PlayerCard(
                                 .graphicsLayer {
                                     val q = queueSlideProgress.value
                                     alpha = lyricAnimProgress.value * if (q > 0.01f) 1f else 0f
-                                    translationX = (1f - q) * screenWidthPx
+                                    translationX = (1f - q) * size.width
                                 }
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .padding(start = 16.dp, end = 60.dp, top = 8.dp, bottom = 8.dp)
                                     .onGloballyPositioned {
                                         queueHeaderHeightPx = it.size.height.toFloat()
                                     },
@@ -771,7 +816,7 @@ fun PlayerCard(
                                     )
                                     MetroText(
                                         s.artists?.joinToString("/") { it.name } ?: "",
-                                        color = LocalMetroColors.current.onSurfaceVariant,
+                                        color = LocalMetroColors.current.primary,
                                         style = LocalMetroTypography.current.bodyLarge,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -806,45 +851,6 @@ fun PlayerCard(
                         }
                     }
                 } else {
-                    // 窄屏：顶部标题栏 + 整宽面板 + 底部控件（保持原行为）。
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .graphicsLayer { alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) }
-                            .padding(start = 16.dp, end = 56.dp),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer { alpha = lyricAnimProgress.value }
-                                // 歌名区域可点: 上拉"转到歌手/转到专辑"菜单(类 Apple Music)
-                                .clickable { onSongInfoClick() }
-                        ) {
-                            MetroText(
-                                s.name,
-                                color = LocalMetroColors.current.onBackground,
-                                style = LocalMetroTypography.current.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip,
-                                modifier = Modifier.basicMarquee(
-                                    iterations = Int.MAX_VALUE,
-                                    animationMode = MarqueeAnimationMode.Immediately,
-                                    initialDelayMillis = 2000,
-                                    repeatDelayMillis = 2500,
-                                    velocity = 48.dp
-                                )
-                            )
-                            MetroText(
-                                s.artists?.joinToString("/") { it.name } ?: "",
-                                color = LocalMetroColors.current.onSurfaceVariant,
-                                style = LocalMetroTypography.current.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -852,8 +858,16 @@ fun PlayerCard(
                             .onGloballyPositioned { coords ->
                                 val b = coords.boundsInRoot()
                                 portraitCoverCenter = b.center - cardRootOrigin
+                                portraitCoverAvailableHeightPx = coords.size.height.toFloat()
                             }
                             .graphicsLayer { alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) }
+                            .clickable(
+                                enabled = progress.value > 0.8f && !showLyrics && !showQueue,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                showLyrics = true
+                            }
                     ) {
                         playerPanels(Modifier.fillMaxSize())
                         // 大封面模式下的曲名/歌手信息：overlay 在内容区底部，不占高度。
@@ -878,14 +892,14 @@ fun PlayerCard(
                             )
                             MetroText(
                                 s.artists?.joinToString("/") { it.name } ?: "",
-                                color = LocalMetroColors.current.onSurfaceVariant,
+                                color = LocalMetroColors.current.primary,
                                 style = LocalMetroTypography.current.bodyLarge,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                    Spacer(Modifier.height(if (showLyrics || showQueue) 4.dp else 16.dp))
+                    Spacer(Modifier.height(16.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -898,20 +912,18 @@ fun PlayerCard(
         }
 
         // 迷你播放栏叠加层：始终在 Composition 中，透明度仅在绘制阶段控制，避免动画期间触发重组
+        // 注意：graphicsLayer 必须置于 background 之前，否则展开态时背景不受 alpha 约束而残留黑框
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .zIndex(1f)
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-                .height(58.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(LocalMetroColors.current.surface.copy(alpha = 0.96f))
-                .border(
-                    0.5.dp,
-                    LocalMetroColors.current.divider.copy(alpha = 0.5f),
-                    RoundedCornerShape(18.dp)
-                )
+                .graphicsLayer {
+                    alpha = (1f - progress.value * 5f).coerceIn(0f, 1f)
+                }
+                .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .height(48.dp)
+                .background(LocalMetroColors.current.surface)
                 .then(
                     // 暂无播放（hasSong=false）时不可点击展开，避免空白播放器被拉起。
                     if (miniBarEnabled && hasSong) Modifier.clickable(
@@ -927,9 +939,6 @@ fun PlayerCard(
                         }
                     ) else Modifier
                 )
-                .graphicsLayer {
-                    alpha = (1f - progress.value * 5f).coerceIn(0f, 1f)
-                }
         ) {
             Row(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
@@ -941,9 +950,7 @@ fun PlayerCard(
                     Spacer(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .padding(vertical = 4.dp)
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(10.dp))
                     )
                     Column(
                         modifier = Modifier
@@ -1019,13 +1026,16 @@ fun PlayerCard(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(if (isWidePlayer || lyricAnimProgress.value < 0.5f) 4f else 1f)
-                .graphicsLayer { clip = !isWidePlayer && lyricAnimProgress.value >= 0.5f }
+                .graphicsLayer {
+                    clip = true
+                    shape = RectangleShape
+                }
         ) {
         // 唯一封面叠加层：全屏 ↔ miniBar 共用这一个 cover，随 progress 平滑位移/缩放。
-        // 窄屏大图=整屏宽居中；宽屏大图=左栏封面区实测中心与尺寸。
+        // 窄屏大图=封面区实测中心；宽屏大图=左栏封面区实测中心与尺寸。
         if (hasSong) {
             val s = song!!
-            // 折叠态封面只占 56dp，但这里一直按整屏宽解码 1080。点单曲展开的那
+            // 折叠态封面只占 48dp，但这里一直按整屏宽解码 1080。点单曲展开的那
             // 400ms 里，大图解码和封面缩放挤在同一帧，120Hz 下直接掉到 150ms+。
             // 折叠时请求小图（列表预取已在内存里），展开过半再换大图，解码落在
             // 动画后半段、用户已经看到封面在动的时候。
@@ -1041,33 +1051,38 @@ fun PlayerCard(
                  onBitmapReady = { ambientBitmap = it },
                 modifier = Modifier
                     .size(coverSizeDp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .border(
-                        0.5.dp,
-                        LocalMetroColors.current.divider.copy(alpha = 0.35f),
-                        RoundedCornerShape(20.dp)
-                    )
                     .graphicsLayer {
                         val p = progress.value
                         val normalizedP = ((p - 0.2f) / 0.8f).coerceIn(0f, 1f)
-                        val lyricAnimValue = if (isWidePlayer) 0f else lyricAnimProgress.value
-                        val targetCenterX = largeCoverCenterX + lyricAnimValue * (miniCoverCenterX - largeCoverCenterX)
-                        val targetCenterY = largeCoverCenterY + lyricAnimValue * (miniCoverCenterY - largeCoverCenterY)
-                        val targetScale = miniScale + (1f - lyricAnimValue) * (1f - miniScale)
+
+                        val targetCenterX = largeCoverCenterX
+                        val targetCenterY = largeCoverCenterY
+                        val targetScale = 1f
+
                         val currentCenterX = miniCoverCenterX + normalizedP * (targetCenterX - miniCoverCenterX)
                         val currentCenterY = miniCoverCenterY + normalizedP * (targetCenterY - miniCoverCenterY)
                         val currentBaseScale = miniScale + normalizedP * (targetScale - miniScale)
+
+                        alpha = if (isWidePlayer) {
+                            1f
+                        } else {
+                            maxOf(1f - lyricAnimProgress.value, (1f - p * 5f).coerceIn(0f, 1f))
+                        }
                         scaleX = currentBaseScale
                         scaleY = currentBaseScale
                         translationX = currentCenterX - boundsCenter
                         translationY = currentCenterY - boundsCenter
                         transformOrigin = TransformOrigin(0.5f, 0.5f)
+                    }
+                    .clickable(
+                        enabled = progress.value > 0.8f && !showLyrics && !showQueue,
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) {
+                        showLyrics = true
                     },
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Fit
             )
-            // 小封面是纯 graphicsLayer 位移，本身没有布局槽，点击热区按它的落点另画。
-            // 只在歌词视图（封面缩进顶栏）打开，大封面和迷你条不受影响。
-
         }
         }
 
@@ -1141,12 +1156,25 @@ private fun StableCover(
     contentDescription: String?,
     placeholderColor: Color,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Crop,
+    contentScale: ContentScale = ContentScale.Fit,
     onBitmapReady: (Bitmap) -> Unit = {},
 ) {
     val context = LocalContext.current
+    // 封面槽是正方形，但网易封面图常比槽更宽。不指定解码尺寸时 Coil 按原图像素
+    // 解码，ContentScale.Crop 再从中心裁，左右被切掉，看起来不是原图。按槽的
+    // 像素边长解码成正方形，原图完整落进槽里。
+    val density = LocalDensity.current
+    val request = remember(model, density) {
+        val sidePx = with(density) { 360.dp.roundToPx() }
+        ImageRequest.Builder(context)
+            .data(model)
+            .size(sidePx, sidePx)
+            .scale(Scale.FIT)
+            .precision(Precision.EXACT)
+            .build()
+    }
     val painter = rememberAsyncImagePainter(
-        model = model,
+        model = request,
         imageLoader = Coil.imageLoader(context),
     )
     val state = painter.state
@@ -1165,7 +1193,7 @@ private fun StableCover(
             timedOut = false
         }
     }
-    LaunchedEffect(model) {
+    LaunchedEffect(request) {
         timedOut = false
         delay(COVER_HOLD_MS)
         if (painter.state !is AsyncImagePainter.State.Success) timedOut = true

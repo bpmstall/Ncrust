@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
@@ -82,8 +84,8 @@ fun LibraryScreen(
     var savedAlbums by remember { mutableStateOf(LibraryManager.getSavedAlbums(context)) }
     // 未获云端确认的点赞操作数量：>0 时页面顶部提示"仅本地/待重试"，不冒充已同步。
     var pendingSyncCount by remember { mutableIntStateOf(0) }
-    var selectedCategory by remember { mutableIntStateOf(0) }
     val categories = listOf(strings.categoryTracks, strings.categoryAlbums, strings.categoryPlaylists, strings.categoryHistory)
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { categories.size })
 
     var playlists by remember { mutableStateOf<List<PlaylistApi.PlaylistInfo>>(emptyList()) }
     var isLoadingPlaylists by remember { mutableStateOf(false) }
@@ -126,9 +128,9 @@ fun LibraryScreen(
         )
     }
 
-    LaunchedEffect(selectedCategory) {
+    LaunchedEffect(pagerState.currentPage) {
         reloadLocal()
-        if (selectedCategory == 2 && playlists.isEmpty() && !isLoadingPlaylists) {
+        if (pagerState.currentPage == 2 && playlists.isEmpty() && !isLoadingPlaylists) {
             loadPlaylists()
         }
     }
@@ -150,8 +152,8 @@ fun LibraryScreen(
 
     // 收藏单曲分页懒加载：滚动到列表末尾时拉取下一批详情。
     val songListState = rememberLazyListState()
-    LaunchedEffect(selectedCategory) {
-        if (selectedCategory != 0) return@LaunchedEffect
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != 0) return@LaunchedEffect
         snapshotFlow { songListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .distinctUntilChanged()
             .collect { lastIndex ->
@@ -182,31 +184,19 @@ fun LibraryScreen(
             }
             Spacer(Modifier.height(4.dp))
             MetroTabRow(
-                selectedTabIndex = selectedCategory,
+                selectedTabIndex = pagerState.currentPage,
                 items = categories.map { MetroTabItem(it) },
-                onTabSelected = { index -> selectedCategory = index }
+                onTabSelected = { index ->
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(index)
+                    }
+                }
             )
 
-            // Tab 切换用 AnimatedContent 做方向感知的横向滑入。
-            // 距离 1/16 屏宽（比 NavGraph 的 1/8 更轻——同页内切 tab，不应有"翻页"的重量感）；
-            // 200ms MetroDefault 曲线。向右切（index 增）新页从右入、旧页向左出；向左切反之。
-            AnimatedContent(
-                targetState = selectedCategory,
-                transitionSpec = {
-                    val goingRight = targetState > initialState
-                    val enterSign = if (goingRight) 1 else -1
-                    val exitSign = if (goingRight) -1 else 1
-                    (slideInHorizontally(
-                        animationSpec = tween(200, easing = MetroDefault),
-                        initialOffsetX = { fullWidth -> enterSign * fullWidth / 16 }
-                    ) + fadeIn(animationSpec = tween(160, easing = MetroDefault))) togetherWith
-                    (slideOutHorizontally(
-                        animationSpec = tween(200, easing = MetroDefault),
-                        targetOffsetX = { fullWidth -> exitSign * fullWidth / 16 }
-                    ) + fadeOut(animationSpec = tween(160, easing = MetroDefault)))
-                },
-                modifier = Modifier.fillMaxSize(),
-                label = "LibraryCategoryContent"
+            // 支持左右手势滑动切换库内各分类界面
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
             ) { category -> when (category) {
                 0 -> {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -227,58 +217,60 @@ fun LibraryScreen(
                                 MetroText(strings.noSavedSongs, color = LocalMetroColors.current.onSurfaceVariant, style = LocalMetroTypography.current.bodyLarge)
                             }
                         } else {
-                            // 按歌单方式播放「我喜欢的音乐」：整表替换队列，从第一首开始。
-                            // 列表是分页加载的，这里播的是已加载部分。
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                PlayAllButton(size = 40.dp, onClick = { showLikedPlayDialog = true })
-                            }
-                            LazyColumn(
-                                modifier = Modifier.fillMaxWidth().weight(1f),
-                                state = songListState,
-                                contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
-                                flingBehavior = rememberMetroFlingBehavior()
-                            ) {
-                                items(savedSongs, key = { it.id }) { song ->
-                                    SongCard(
-                                        song = song,
-                                        style = SongCardStyle.LIST,
-                                        onClick = { onSongClick(song) },
-                                        onShowMenu = {
-                                            val actions = mutableListOf(
-                                                SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
-                                                    LibraryManager.saveSong(context, song)
-                                                    Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
-                                                },
-                                                SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
-                                                    onSongInsertNext(song)
-                                                },
-                                                SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
-                                                    onSongAppendToQueue(song)
-                                                },
-                                                SongMenuAction(Icons.Default.Delete, strings.actionRemoveFromLibrary) {
-                                                    LibraryManager.removeSong(context, song.id)
-                                                    reloadLocal()
-                                                }
-                                            )
-                                            // 该歌云端未确认：给出显式"重试同步"入口，标明它是仅本地状态。
-                                            if (LibraryManager.isSongPendingSync(context, song.id)) {
-                                                actions.add(
-                                                    SongMenuAction(Icons.Default.Sync, strings.retrySync) {
-                                                        coroutineScope.launch {
-                                                            LibraryManager.retryPendingSync(context)
-                                                            reloadLocal()
-                                                        }
+                            // 悬浮播放全部按钮，不占整栏，列表直通顶部
+                            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    state = songListState,
+                                    contentPadding = PaddingValues(top = 8.dp, bottom = BottomOverlayInsetDp),
+                                    flingBehavior = rememberMetroFlingBehavior()
+                                ) {
+                                    items(savedSongs, key = { it.id }) { song ->
+                                        SongCard(
+                                            song = song,
+                                            style = SongCardStyle.LIST,
+                                            onClick = { onSongClick(song) },
+                                            onShowMenu = {
+                                                val actions = mutableListOf(
+                                                    SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
+                                                        LibraryManager.saveSong(context, song)
+                                                        Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
+                                                        onSongInsertNext(song)
+                                                    },
+                                                    SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
+                                                        onSongAppendToQueue(song)
+                                                    },
+                                                    SongMenuAction(Icons.Default.Delete, strings.actionRemoveFromLibrary) {
+                                                        LibraryManager.removeSong(context, song.id)
+                                                        reloadLocal()
                                                     }
                                                 )
+                                                // 该歌云端未确认：给出显式"重试同步"入口，标明它是仅本地状态。
+                                                if (LibraryManager.isSongPendingSync(context, song.id)) {
+                                                    actions.add(
+                                                        SongMenuAction(Icons.Default.Sync, strings.retrySync) {
+                                                            coroutineScope.launch {
+                                                                LibraryManager.retryPendingSync(context)
+                                                                reloadLocal()
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                                onShowSongMenu(song, actions)
                                             }
-                                            onShowSongMenu(song, actions)
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
+                                // 悬浮在右上角原位置，不占整栏，列表通透到顶
+                                PlayAllButton(
+                                    size = 40.dp,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(end = 16.dp, top = 8.dp),
+                                    onClick = { showLikedPlayDialog = true }
+                                )
                             }
                         }
                     }

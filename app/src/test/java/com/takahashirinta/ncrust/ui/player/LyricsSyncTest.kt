@@ -14,4 +14,5 @@ class LyricsSyncTest {
     fun `small forward drift stays extrapolated`() {
         assertFalse(shouldSnapLyricPosition(displayMs = 12_000L, sampleMs = 12_400L))
     }
+
 }
