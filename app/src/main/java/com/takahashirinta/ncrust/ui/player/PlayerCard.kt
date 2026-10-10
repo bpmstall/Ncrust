@@ -872,32 +872,40 @@ fun PlayerCard(
                     ) {
                         playerPanels(Modifier.fillMaxSize())
                         // 大封面模式下的曲名/歌手信息：overlay 在内容区底部，不占高度。
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 8.dp)
-                                .graphicsLayer {
-                                    alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) *
-                                            (1f - lyricAnimProgress.value)
-                                }
-                                // 歌名区域可点: 上拉"转到歌手/转到专辑"菜单(类 Apple Music)
-                                .clickable { onSongInfoClick() }
-                        ) {
-                            MetroText(
-                                s.name,
-                                color = LocalMetroColors.current.onBackground,
-                                style = LocalMetroTypography.current.titleLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            MetroText(
-                                s.artists?.joinToString("/") { it.name } ?: "",
-                                color = LocalMetroColors.current.primary,
-                                style = LocalMetroTypography.current.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        // 仅在封面模式（!showLyrics && !showQueue）下展示并响应点击，彻底避免在歌词或列表界面下半部分误触“转到歌手/专辑”菜单
+                        if (!showLyrics && !showQueue) {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                                    .graphicsLayer {
+                                        alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) *
+                                                (1f - lyricAnimProgress.value)
+                                    }
+                                    // 歌名区域可点: 上拉"转到歌手/转到专辑"菜单(类 Apple Music)
+                                    .clickable(
+                                        enabled = progress.value > 0.8f,
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        onClick = onSongInfoClick
+                                    )
+                            ) {
+                                MetroText(
+                                    s.name,
+                                    color = LocalMetroColors.current.onBackground,
+                                    style = LocalMetroTypography.current.titleLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                MetroText(
+                                    s.artists?.joinToString("/") { it.name } ?: "",
+                                    color = LocalMetroColors.current.primary,
+                                    style = LocalMetroTypography.current.bodyLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(16.dp))
