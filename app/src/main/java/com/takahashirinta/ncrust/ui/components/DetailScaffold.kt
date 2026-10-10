@@ -286,7 +286,8 @@ fun DetailScaffold(
                 )
         )
 
-        // 吸顶标题栏：常驻挂载以规避首次进入时的突发重组掉帧，透明度/位移/背景纯走 GPU 绘制阶段
+        // 吸顶标题栏：常驻挂载以规避首次进入时的突发重组掉帧，透明度/位移/背景纯走 GPU 绘制阶段。
+        // 外层 MainActivity 容器已处理 systemBars inset，此处贴紧顶边（高度 56dp），不重复 statusBarsPadding() 造成多余间隙。
         val barBgBase = LocalMetroColors.current.background
         val barBgColor = dominantColor?.let { lerp(barBgBase, it, 0.18f) } ?: barBgBase
         Row(
@@ -299,7 +300,6 @@ fun DetailScaffold(
                         drawRect(barBgColor.copy(alpha = p))
                     }
                 }
-                .statusBarsPadding()
                 .height(56.dp)
                 .padding(end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
