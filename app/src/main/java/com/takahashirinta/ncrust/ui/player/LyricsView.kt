@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
  */
 @Composable
 fun LyricsView(
+    songId: Long = -1L,
     lyrics: List<LrcLine>,
     translatedLyrics: List<LrcLine> = emptyList(),
     showTranslation: Boolean = true,
@@ -55,16 +58,11 @@ fun LyricsView(
     onUserScrolled: () -> Unit = {},
     // 歌词是否仍在加载：加载中且暂无内容时留空，避免切歌瞬间闪一下"暂无歌词"。
     isLoading: Boolean = false,
+    fontSize: androidx.compose.ui.unit.TextUnit = 26.sp,
+    lineHeight: androidx.compose.ui.unit.TextUnit = 36.sp,
+    centerAligned: Boolean = false,
 ) {
     val strings = LocalStrings.current
-    if (lyrics.isEmpty()) {
-        if (!isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                MetroText(strings.noLyrics, color = LocalMetroColors.current.onSurfaceVariant, style = TextStyle(fontSize = 18.sp))
-            }
-        }
-        return
-    }
 
     // list 引用保持稳定,让面板的测量缓存以它为 key 不被误清。
     // 翻译按时间戳精确对齐原句(网易 tlyric 与原 lrc 时间戳一致),缺失的行不显示译文。
@@ -76,9 +74,10 @@ fun LyricsView(
     // 订阅位置流:collectAsState 建 State;displayPosition 只在面板 draw/derived
     // 阶段被读,按需写一次也只重算当前行,不触发本 Composable 重组。
     val positionState = positionFlow.collectAsState()
-    // 歌词变了（换歌）必须以新歌的当前进度重构状态，不可沿用上一首歌残留的高位 displayPosition
-    val displayPosition = remember(lyrics) { mutableLongStateOf(positionState.value) }
-    val anchor = remember(lyrics) {
+    // 时钟跟歌曲走，不跟歌词列表走。切歌时歌词会先被清空再异步填回，
+    // 若只 remember(lyrics)，新列表到达前外推仍挂在上一首的锚点上。
+    var displayPosition by remember(songId) { mutableLongStateOf(positionState.value) }
+    val anchor = remember(songId) {
         PositionAnchor().apply {
             anchorPosMs = positionState.value
             anchorNanos = System.nanoTime()
@@ -95,8 +94,8 @@ fun LyricsView(
             anchor.anchorNanos = System.nanoTime()
             // 关键：若采样位置回退（切歌、倒退 seek、循环重播）或发生大步跳跃，
             // 立即强行对齐 displayPosition，彻底消除高位旧值锁死歌词的 Bug。
-            if (pos < displayPosition.longValue || kotlin.math.abs(pos - displayPosition.longValue) > 1000L) {
-                displayPosition.longValue = pos
+            if (shouldSnapLyricPosition(displayPosition, pos)) {
+                displayPosition = pos
             }
         }
     }
@@ -104,7 +103,7 @@ fun LyricsView(
     // 外部强制定位（如切歌展开、歌词面板滑出）
     LaunchedEffect(forcedLocateTrigger) {
         if (forcedLocateTrigger != 0) {
-            displayPosition.longValue = positionState.value
+            displayPosition = positionState.value
             anchor.anchorPosMs = positionState.value
             anchor.anchorNanos = System.nanoTime()
         }
@@ -115,7 +114,7 @@ fun LyricsView(
     // 2Hz 采样会把锚点重置回真实值,所以外推误差不会累积。暂停/隐藏即停。
     LaunchedEffect(isPlaying, isBuffering, isVisible, timestamps) {
         if (!isPlaying || isBuffering || !isVisible) {
-            displayPosition.longValue = positionState.value
+            displayPosition = positionState.value
             anchor.anchorPosMs = positionState.value
             anchor.anchorNanos = System.nanoTime()
             return@LaunchedEffect
@@ -135,24 +134,33 @@ fun LyricsView(
             val extrapolated =
                 anchor.anchorPosMs + (System.nanoTime() - anchor.anchorNanos) / 1_000_000L
             // 只在真正越过该边界时写,长间隔里不会每秒写一次状态。
-            if (extrapolated >= next && extrapolated >= displayPosition.longValue) {
-                displayPosition.longValue = extrapolated
+            if (extrapolated >= next && extrapolated >= displayPosition) {
+                displayPosition = extrapolated
             }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        MetroLyricsPanel(
+        if (lyrics.isEmpty()) {
+            if (!isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    MetroText(strings.noLyrics, color = LocalMetroColors.current.onSurfaceVariant, style = TextStyle(fontSize = 18.sp))
+                }
+            }
+        } else MetroLyricsPanel(
             lines = metroLines,
-            currentPositionMillis = { displayPosition.longValue },
+            currentPositionMillis = { displayPosition },
             isVisible = isVisible,
             forcedScrollTrigger = forcedLocateTrigger,
             enabled = enabled,
+            fontSize = fontSize,
+            lineHeight = lineHeight,
+            centerAligned = centerAligned,
             onLineClick = if (enabled) { ms ->
                 // 点击行:本地立即定位,不等 2Hz 采样回传,seek 手感即时。
                 anchor.anchorPosMs = ms
                 anchor.anchorNanos = System.nanoTime()
-                displayPosition.longValue = ms
+                displayPosition = ms
                 onSeekToMs(ms)
             } else { _ -> },
             onUserScrolled = onUserScrolled,
@@ -162,14 +170,15 @@ fun LyricsView(
             futureLineColor = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.4f),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 12.dp),
         )
 
+        if (lyrics.isNotEmpty()) {
         // 上下边缘淡出,让歌词从黑里浮出来(沿用原实现)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp)
+                .height(48.dp)
                 .align(Alignment.TopCenter)
                 .background(
                     Brush.verticalGradient(listOf(LocalMetroColors.current.background, Color.Transparent))
@@ -178,14 +187,19 @@ fun LyricsView(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp)
+                .height(56.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(listOf(Color.Transparent, LocalMetroColors.current.background))
                 )
         )
+        }
     }
 }
+
+/** 采样回退或跳过 1s 时立刻对齐，避免切歌后旧进度锁住新歌歌词。 */
+internal fun shouldSnapLyricPosition(displayMs: Long, sampleMs: Long): Boolean =
+    sampleMs < displayMs || kotlin.math.abs(sampleMs - displayMs) > 1_000L
 
 private class PositionAnchor {
     var anchorPosMs: Long = 0L

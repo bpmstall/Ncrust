@@ -89,6 +89,13 @@ fun UserScreen(
     var mobileQuality by remember { mutableIntStateOf(prefs.getInt("mobile_quality", 1)) }
     var gaplessEnabled by remember { mutableStateOf(prefs.getBoolean("gapless_playback", true)) }
     var lyricsTranslation by remember { mutableStateOf(prefs.getBoolean("lyrics_translation", true)) }
+    var lyricsFontSize by remember { mutableIntStateOf(prefs.getInt("lyrics_font_size", 1)) }
+    var lyricsAlignCenter by remember { mutableStateOf(prefs.getBoolean("lyrics_align_center", false)) }
+    var lyricsCompactControls by remember { mutableStateOf(prefs.getBoolean("lyrics_compact_controls", true)) }
+    var dynamicArtworkBackground by remember { mutableStateOf(prefs.getBoolean("dynamic_artwork_background", true)) }
+    var modernRoundedCorners by remember { mutableStateOf(prefs.getBoolean("modern_rounded_corners", true)) }
+    var hapticFeedback by remember { mutableStateOf(prefs.getBoolean("haptic_feedback", true)) }
+    var lyricsKeepScreenOn by remember { mutableStateOf(prefs.getBoolean("lyrics_keep_screen_on", false)) }
 
     var selectedLanguageCode by remember { mutableStateOf(getSavedLanguageCode(context)) }
 
@@ -284,6 +291,78 @@ fun UserScreen(
                     lyricsTranslation = it
                     prefs.edit().putBoolean("lyrics_translation", it).apply()
                     playerViewModel.setLyricsTranslation(it)
+                }
+            )
+            // 歌词字号选择 (紧凑 22sp / 标准 26sp / 大号 30sp / 特大 34sp)
+            MetroDropdownRow(
+                label = "歌词大小",
+                selectedIndex = lyricsFontSize,
+                options = listOf("紧凑 (22sp)", "标准 (26sp)", "大号 (30sp)", "特大 (34sp)"),
+                onSelect = {
+                    lyricsFontSize = it
+                    prefs.edit().putInt("lyrics_font_size", it).apply()
+                }
+            )
+            // 歌词对齐方式 (居左 / 居中)
+            SettingSwitchRow(
+                title = "歌词居中对齐",
+                description = "关闭为居左对齐（Apple Music/Spotify风格），开启为居中对齐",
+                checked = lyricsAlignCenter,
+                onCheckedChange = {
+                    lyricsAlignCenter = it
+                    prefs.edit().putBoolean("lyrics_align_center", it).apply()
+                }
+            )
+            // 歌词界面紧凑控制栏
+            SettingSwitchRow(
+                title = "歌词模式精简控制栏",
+                description = "打开歌词时缩小底部播放控制按钮，留出更大视野与显示行数",
+                checked = lyricsCompactControls,
+                onCheckedChange = {
+                    lyricsCompactControls = it
+                    prefs.edit().putBoolean("lyrics_compact_controls", it).apply()
+                }
+            )
+            // 歌词常亮
+            SettingSwitchRow(
+                title = "看歌词时屏幕常亮",
+                checked = lyricsKeepScreenOn,
+                onCheckedChange = {
+                    lyricsKeepScreenOn = it
+                    prefs.edit().putBoolean("lyrics_keep_screen_on", it).apply()
+                }
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+
+        // 视觉与现代化动效
+        item {
+            SectionTitle("视觉与现代质感")
+            SettingSwitchRow(
+                title = "动态封面氛围模糊背景",
+                description = "从当前歌曲封面提取色彩与柔和高斯模糊，在全屏播放器背景渲染",
+                checked = dynamicArtworkBackground,
+                onCheckedChange = {
+                    dynamicArtworkBackground = it
+                    prefs.edit().putBoolean("dynamic_artwork_background", it).apply()
+                }
+            )
+            SettingSwitchRow(
+                title = "现代化大圆角卡片",
+                description = "使用 18dp~20dp 现代大圆角与浮岛设计（Xiaomi HyperOS 风格）",
+                checked = modernRoundedCorners,
+                onCheckedChange = {
+                    modernRoundedCorners = it
+                    prefs.edit().putBoolean("modern_rounded_corners", it).apply()
+                }
+            )
+            SettingSwitchRow(
+                title = "触觉轻震反馈",
+                description = "播放、暂停、切歌与模式切换时提供轻微触觉反馈",
+                checked = hapticFeedback,
+                onCheckedChange = {
+                    hapticFeedback = it
+                    prefs.edit().putBoolean("haptic_feedback", it).apply()
                 }
             )
             Spacer(Modifier.height(24.dp))

@@ -30,11 +30,10 @@ fun PlayerCardOverlay(
     onSetPlayMode: (Int) -> Unit = {},
     onPlayNothing: () -> Unit = {},
     onSongInfoClick: () -> Unit = {},
-    onOpenArtist: () -> Unit = {},
-    onOpenAlbum: () -> Unit = {},
     onClearQueue: () -> Unit = {},
     onSavePlaylist: () -> Unit = {},
-    onNavigateToUser: () -> Unit = {}
+    onNavigateToUser: () -> Unit = {},
+    onQualitySelected: (Int) -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -62,11 +61,12 @@ fun PlayerCardOverlay(
             onSetPlayMode = onSetPlayMode,
             onPlayNothing = onPlayNothing,
             onSongInfoClick = onSongInfoClick,
-            onOpenArtist = onOpenArtist,
-            onOpenAlbum = onOpenAlbum,
+            
+            
             onClearQueue = onClearQueue,
             onSavePlaylist = onSavePlaylist,
-            onNavigateToUser = onNavigateToUser
+            onNavigateToUser = onNavigateToUser,
+             onQualitySelected = onQualitySelected
         )
     }
 }

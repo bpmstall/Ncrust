@@ -1,15 +1,20 @@
 package com.takahashirinta.ncrust.ui.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import io.github.takahashirinta.kanesumi.controls.MetroDialog
+import io.github.takahashirinta.kanesumi.controls.MetroDivider
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +43,7 @@ fun FullPlayerControls(
     durationFlow: StateFlow<Long>,
     qualityIndexFlow: StateFlow<Int>,
     qualityOptions: List<String>,
+    onQualitySelected: (Int) -> Unit = {},
     onPlayPause: () -> Unit,
     onPlayPrevious: () -> Unit = {},
     onPlayNext: () -> Unit = {},
@@ -48,7 +54,6 @@ fun FullPlayerControls(
     isInLibrary: Boolean = false,
     isBufferingFlow: StateFlow<Boolean>,
     onSeek: (Float) -> Unit = {},
-    onNavigateToUser: () -> Unit = {},
     lyricsUnavailable: Boolean = false,
     previousEnabled: Boolean = true,
     // 宽屏左栏用紧凑尺寸：缩小按钮/间距，把纵向空间让给封面区。
@@ -57,22 +62,56 @@ fun FullPlayerControls(
     landscape: Boolean = false
 ) {
     val strings = LocalStrings.current
+    var qualityDialogOpen by remember { mutableStateOf(false) }
+    val selectedQuality by qualityIndexFlow.collectAsState()
+    if (qualityDialogOpen) {
+        MetroDialog(onDismissRequest = { qualityDialogOpen = false }, widthDp = 320.dp) {
+            MetroText(
+                text = strings.qualitySectionTitle,
+                color = LocalMetroColors.current.onBackground,
+                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(20.dp)
+            )
+            MetroDivider()
+            qualityOptions.forEachIndexed { index, label ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onQualitySelected(index)
+                            qualityDialogOpen = false
+                        }
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroIcon(
+                        imageVector = if (selectedQuality == index) Icons.Default.Check else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (selectedQuality == index) LocalMetroColors.current.primary else LocalMetroColors.current.onSurfaceVariant,
+                        sizeDp = 22.dp
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    MetroText(text = label, color = LocalMetroColors.current.onBackground)
+                }
+            }
+        }
+    }
     // 触觉反馈:播放/暂停/切歌/开关面板给一个轻振,补足无 ripple 时代的确认感
     val haptic = LocalHapticFeedback.current
     fun tick() = haptic.performHapticFeedback(HapticFeedbackType.LongPress)
 
     val hPad = if (compact) 16.dp else 24.dp
-    val bottomPad = if (compact) 8.dp else 32.dp
-    val gapTight = if (compact) 4.dp else 8.dp
-    val gapLoose = if (compact) 8.dp else 16.dp
-    val ctrlRowPad = if (compact) 2.dp else 16.dp
-    val sideBtn = if (compact) 44.dp else 60.dp
-    val sideIcon = if (compact) 30.dp else 40.dp
-    val playBtn = if (compact) 58.dp else 84.dp
-    val playIcon = if (compact) 38.dp else 56.dp
-    val sideGap = if (compact) 20.dp else 32.dp
-    val toggleBtn = if (compact) 44.dp else 56.dp
-    val toggleIcon = if (compact) 26.dp else 32.dp
+    val bottomPad = if (compact) 6.dp else 24.dp
+    val gapTight = if (compact) 2.dp else 8.dp
+    val gapLoose = if (compact) 4.dp else 12.dp
+    val ctrlRowPad = if (compact) 0.dp else 12.dp
+    val sideBtn = if (compact) 38.dp else 56.dp
+    val sideIcon = if (compact) 22.dp else 36.dp
+    val playBtn = if (compact) 52.dp else 76.dp
+    val playIcon = if (compact) 28.dp else 48.dp
+    val sideGap = if (compact) 16.dp else 28.dp
+    val toggleBtn = if (compact) 38.dp else 52.dp
+    val toggleIcon = if (compact) 22.dp else 28.dp
 
     if (landscape) {
         // 宽屏横向控件条：进度行（位置 · 进度 · 时长）+ 操作行（面板开关 · 音质 · 传输），
@@ -216,7 +255,7 @@ fun FullPlayerControls(
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() }
-                        ) { onNavigateToUser() }
+                        ) { qualityDialogOpen = true }
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     QualityLabel(qualityIndexFlow = qualityIndexFlow, options = qualityOptions)
@@ -241,12 +280,15 @@ fun FullPlayerControls(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .background(LocalMetroColors.current.surfaceVariant)
+                    .background(
+                        LocalMetroColors.current.surfaceVariant,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    )
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
-                    ) { onNavigateToUser() }
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) { qualityDialogOpen = true }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 QualityLabel(qualityIndexFlow = qualityIndexFlow, options = qualityOptions)
             }
@@ -290,6 +332,15 @@ fun FullPlayerControls(
             Box(
                 modifier = Modifier
                     .size(playBtn)
+                    .background(
+                        LocalMetroColors.current.surfaceVariant,
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    )
+                    .border(
+                        1.dp,
+                        LocalMetroColors.current.divider.copy(alpha = 0.5f),
+                        androidx.compose.foundation.shape.CircleShape
+                    )
                     .clickable {
                         tick()
                         onPlayPause()
@@ -299,7 +350,7 @@ fun FullPlayerControls(
                 MetroIcon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) strings.pauseButton else strings.playButton,
-                    tint = LocalMetroColors.current.onBackground,
+                    tint = LocalMetroColors.current.primary,
                     sizeDp = playIcon
                 )
             }

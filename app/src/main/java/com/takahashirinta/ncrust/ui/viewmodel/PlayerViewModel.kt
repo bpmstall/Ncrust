@@ -13,15 +13,24 @@ import com.takahashirinta.ncrust.lyric.LrcLine
 import com.takahashirinta.ncrust.lyric.LrcParser
 import com.takahashirinta.ncrust.lyric.LyricsCache
 import com.takahashirinta.ncrust.network.RetrofitClient
+import com.takahashirinta.ncrust.player.PlaybackConnection
 import com.takahashirinta.ncrust.player.PlaybackService
 import com.takahashirinta.ncrust.player.PlaybackStateManager
+import com.takahashirinta.ncrust.player.NowPlaying
+import com.takahashirinta.ncrust.player.PlayerUiState
+import com.takahashirinta.ncrust.player.PlayerUiStore
 import com.takahashirinta.ncrust.player.PlayReporter
 import com.takahashirinta.ncrust.player.SongUrlFetcher
 import com.takahashirinta.ncrust.player.SongUrlResult
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
+    /** Playback snapshot and clock are shared across mini and full player surfaces. */
+    val uiState: StateFlow<PlayerUiState> = PlayerUiStore.state
+    val positionStateMs = PlayerUiStore.positionMs
+
     val isPlaying = MutableStateFlow(false)
     val currentPosition = MutableStateFlow(0L)
     val duration = MutableStateFlow(0L)
@@ -68,6 +77,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val currentQualityIndex = MutableStateFlow(3)
     private val qualityApiLevels = listOf("standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "dolby")
 
+    fun setQuality(index: Int) {
+        val level = qualityApiLevels.getOrNull(index) ?: return
+        val songId = currentSongId.value ?: return
+        val prefs = getApplication<Application>().getSharedPreferences("ncrust_settings", 0)
+        val key = if (isOnWifi()) "wifi_quality" else "mobile_quality"
+        prefs.edit().putInt(key, index).apply()
+        playSong(
+            songId = songId,
+            title = currentSongName.value.orEmpty(),
+            artist = currentSongArtist.value.orEmpty(),
+            artworkUrl = currentSongArtwork.value.orEmpty(),
+            quality = level
+        )
+    }
+
     // 播放出错(如设备解码不了 24-bit FLAC / 高采样率)时自动降档重试的阶梯。
     // 每出错一次降一档,到 standard 仍失败才跳歌:保证「有声音,或跳歌」,绝不静默卡住。
     private val qualityRetryLadder = listOf("dolby", "jyeffect", "hires", "lossless", "exhigh", "higher", "standard")
@@ -99,6 +123,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var currentlyPreloadingSongId = -1L
 
     init {
+        PlaybackConnection.connect(getApplication())
         refreshGaplessSetting()
         // 从设置读歌词翻译开关(默认开);设置页切换时经 setLyricsTranslation 实时生效。
         showLyricsTranslation.value = getApplication<Application>()
@@ -106,6 +131,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             .getBoolean("lyrics_translation", true)
 
         PlaybackService.onProgressUpdate = { pos, dur ->
+            PlayerUiStore.onPositionChanged(pos, dur)
             currentPosition.value = pos
             duration.value = dur
             progress.value = if (dur > 0) pos.toFloat() / dur.toFloat() else 0f
@@ -135,22 +161,32 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             onSongEndedCallback?.invoke()
         }
         PlaybackService.onPlaybackPrevious = { onSongPreviousCallback?.invoke() }
-        PlaybackService.onIsPlayingChanged = { playing -> isPlaying.value = playing }
-        PlaybackService.onBufferingChanged = { buffering -> isBuffering.value = buffering }
+        PlaybackService.onIsPlayingChanged = { playing ->
+            PlayerUiStore.onPlayingChanged(playing)
+            isPlaying.value = playing
+        }
+        PlaybackService.onBufferingChanged = { buffering ->
+            PlayerUiStore.onBufferingChanged(buffering)
+            isBuffering.value = buffering
+        }
         // ExoPlayer 主线程回调。播放失败 → 降档重试,而不是无声地停在 IDLE。
-        PlaybackService.onPlaybackError = { sid -> handlePlaybackError(sid) }
+        PlaybackService.onPlaybackError = { sid ->
+            PlayerUiStore.onError("playback:$sid")
+            handlePlaybackError(sid)
+        }
 
         // Called on the main thread by ExoPlayer's onMediaItemTransition (AUTO reason).
         // 元数据由 PlaybackService 从真正开始播放的 MediaItem 读出，与音频同源。
         PlaybackService.onSongTransitioned = { now ->
+            PlayerUiStore.onSongChanged(now)
             if (now.songId > 0) {
                 resetLyricsForNewSong()
+                currentPosition.value = 0L
+                progress.value = 0f
                 currentSongId.value = now.songId
                 currentSongName.value = now.title
                 currentSongArtist.value = now.artist
                 currentSongArtwork.value = now.artwork.ifEmpty { null }
-                currentPosition.value = 0L
-                progress.value = 0f
                 // 音质档位同样取自当前 MediaItem 的 extras，与标题/封面同源，
                 // 因此三者绝不会互相错位（旧的全局预载槽推断正是错位来源）。
                 if (now.actualLevel.isNotEmpty()) {
@@ -174,6 +210,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val live = runCatching { svc?.currentNowPlaying() }.getOrNull()
         val savedState = PlaybackStateManager.getState(getApplication())
         if (live != null) {
+            PlayerUiStore.onSongChanged(live)
+            PlayerUiStore.onPlayingChanged(runCatching { svc?.player?.isPlaying == true }.getOrDefault(false))
             resetLyricsForNewSong()
             currentSongId.value = live.songId
             currentSongName.value = live.title
@@ -187,6 +225,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch { fetchLyrics(live.songId) }
         } else if (savedState != null) {
             resetLyricsForNewSong()
+            PlayerUiStore.onSongChanged(
+                NowPlaying(savedState.songId, savedState.songName, savedState.songArtist, savedState.songArtwork, "")
+            )
             currentSongId.value = savedState.songId
             currentSongName.value = savedState.songName
             currentSongArtist.value = savedState.songArtist
@@ -204,8 +245,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             runCatching {
                 val p = svc.player
                 isPlaying.value = p.isPlaying
+                PlayerUiStore.onPlayingChanged(p.isPlaying)
                 val livePos = p.currentPosition
                 val liveDur = p.duration
+                PlayerUiStore.onPositionChanged(livePos, liveDur)
                 if (liveDur > 0) {
                     currentPosition.value = livePos
                     duration.value = liveDur
@@ -282,6 +325,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val cachedEntry = preloadCache[songId]?.takeIf {
             it.requestedLevel == selectedQuality && System.currentTimeMillis() - it.timestamp <= CACHE_TTL_MS
         }
+        PlayerUiStore.onSongChanged(NowPlaying(songId, title, artist, artworkUrl, ""))
         if (cachedEntry != null) {
             lastPlayedLevel = cachedEntry.actualLevel
             val actualIdx = qualityApiLevels.indexOf(cachedEntry.actualLevel).coerceAtLeast(0)
@@ -333,6 +377,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.Main) {
                     lastPlayedLevel = result.actualLevel
                     currentQualityIndex.value = actualIdx
+                    PlayerUiStore.onSongChanged(NowPlaying(songId, title, artist, artworkUrl, result.actualLevel))
                     currentSongId.value = songId
                     currentSongName.value = title
                     currentSongArtist.value = artist
@@ -618,6 +663,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun syncCurrentSongFromSession(songId: Long, title: String, artist: String, artwork: String) {
         if (songId <= 0 || currentSongId.value == songId) return
         resetLyricsForNewSong()
+        PlayerUiStore.onSongChanged(NowPlaying(songId, title, artist, artwork, ""))
         currentSongId.value = songId
         currentSongName.value = title
         currentSongArtist.value = artist
@@ -633,6 +679,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun prepareSongWithoutPlay(songId: Long, title: String, artist: String, artworkUrl: String) {
         latestPlaySongId = songId
         resetLyricsForNewSong()
+        PlayerUiStore.onSongChanged(NowPlaying(songId, title, artist, artworkUrl, ""))
         currentSongId.value = songId
         currentSongName.value = title
         currentSongArtist.value = artist
@@ -661,15 +708,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             )
             return
         }
-        isPlaying.value = !isPlaying.value
-        val intent = Intent(getApplication(), PlaybackService::class.java).apply {
-            putExtra("action", if (isPlaying.value) "resume" else "pause")
+        val nextPlaying = !isPlaying.value
+        val sent = if (nextPlaying) PlaybackConnection.play() else PlaybackConnection.pause()
+        PlayerUiStore.onPlayingChanged(nextPlaying)
+        isPlaying.value = nextPlaying
+        if (!sent) {
+            val intent = Intent(getApplication(), PlaybackService::class.java).apply {
+                putExtra("action", if (nextPlaying) "resume" else "pause")
+            }
+            getApplication<Application>().startService(intent)
         }
-        getApplication<Application>().startService(intent)
     }
 
     /** 仅暂停播放,保留当前歌曲与队列(LINE 模式队尾停用)。 */
     fun pausePlayback() {
+        PlayerUiStore.onPlayingChanged(false)
         isPlaying.value = false
         val intent = Intent(getApplication(), PlaybackService::class.java).apply {
             putExtra("action", "pause")
@@ -678,6 +731,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekTo(position: Long) {
+        if (PlaybackConnection.seekTo(position)) return
         val intent = Intent(getApplication(), PlaybackService::class.java).apply {
             putExtra("action", "seek")
             putExtra("position", position)
@@ -694,6 +748,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             putExtra("action", "stop")
         }
         app.startService(intent)
+        PlayerUiStore.onPlayingChanged(false)
+        PlayerUiStore.onSongChanged(NowPlaying(0L, "", "", "", ""))
         isPlaying.value = false
         resetLyricsForNewSong()
         currentSongId.value = null

@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
 import com.takahashirinta.ncrust.warmup.AppWarmup
+import com.takahashirinta.ncrust.ui.theme.LocalNcrustColors
 import io.github.takahashirinta.kanesumi.core.theme.LocalMetroColors
 import io.github.takahashirinta.kanesumi.core.theme.MetroText
 import kotlinx.coroutines.delay
@@ -47,7 +48,7 @@ fun SplashScreen(onFinished: () -> Unit) {
         ) {
             MetroText(
                 "Ncrust",
-                color = Color(0xFF1DB954),
+                color = LocalNcrustColors.current.primary,
                 style = TextStyle(fontSize = 48.sp, fontWeight = FontWeight.ExtraBold)
             )
             Spacer(Modifier.height(8.dp))

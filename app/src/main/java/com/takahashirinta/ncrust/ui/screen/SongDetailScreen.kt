@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.takahashirinta.ncrust.ui.ResponsiveContent
+import com.takahashirinta.ncrust.ui.theme.LocalNcrustColors
 import com.takahashirinta.ncrust.ui.components.TopScrimIconButton
 import com.takahashirinta.ncrust.ui.i18n.LocalStrings
 import com.takahashirinta.ncrust.ui.viewmodel.SongViewModel
@@ -51,7 +52,7 @@ fun SongDetailScreen(songId: Long, onBack: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     MetroText(
                         song.artists.joinToString("/") { it.name },
-                        color = Color(0xFF1DB954),
+                        color = LocalNcrustColors.current.primary,
                         style = LocalMetroTypography.current.titleMedium
                     )
                     Spacer(modifier = Modifier.height(4.dp))

@@ -20,15 +20,15 @@ data class ThemeColorPreset(
 /**
  * 6 种主题色预设，契合设计文档第十三节：
  * Spruce / Cobalt / Crimson / Amber / Violet / Mono
- * 背景一律采用 OLED 纯黑 #000000（surface 统一用 #1A1A1A）
+ * 深色采用分层中性灰背景，避免纯黑与 surface 同色造成视觉塌陷。
  */
 val themeColorPresets = listOf(
-    ThemeColorPreset("云杉",  Color(0xFF1DB954)),
-    ThemeColorPreset("钴蓝",  Color(0xFF3B82F6)),
-    ThemeColorPreset("绯红",  Color(0xFFEF4444)),
-    ThemeColorPreset("琥珀",  Color(0xFFF59E0B)),
-    ThemeColorPreset("堇紫",  Color(0xFF8B5CF6)),
-    ThemeColorPreset("素白",  Color(0xFFFFFFFF)),
+    ThemeColorPreset("小米橙", Color(0xFFFF6900)),
+    ThemeColorPreset("天空蓝", Color(0xFF3D8BFF)),
+    ThemeColorPreset("薄荷绿", Color(0xFF21B68A)),
+    ThemeColorPreset("玫瑰红", Color(0xFFE85D75)),
+    ThemeColorPreset("柔紫", Color(0xFF8A78D8)),
+    ThemeColorPreset("中性灰", Color(0xFF6B6D72)),
 )
 
 /** 主题模式：跟随系统 / 深色 / 浅色。 */
@@ -79,7 +79,7 @@ fun themeColorForIndex(index: Int): Color {
 
 @Composable
 fun NcrustTheme(
-    primaryColor: Color = Color(0xFF1DB954),
+    primaryColor: Color = Color(0xFFFF6900),
     isDark: Boolean = true,
     content: @Composable () -> Unit
 ) {

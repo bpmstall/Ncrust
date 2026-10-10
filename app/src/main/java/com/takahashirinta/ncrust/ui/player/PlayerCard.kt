@@ -11,8 +11,10 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
@@ -24,7 +26,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -38,7 +44,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -67,6 +72,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import android.widget.Toast
+import androidx.palette.graphics.Palette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun PlayerCard(
@@ -88,11 +96,10 @@ fun PlayerCard(
     onSetPlayMode: (Int) -> Unit = {},
     onPlayNothing: () -> Unit = {},
     onSongInfoClick: () -> Unit = {},
-    onOpenArtist: () -> Unit = {},
-    onOpenAlbum: () -> Unit = {},
     onClearQueue: () -> Unit = {},
     onSavePlaylist: () -> Unit = {},
-    onNavigateToUser: () -> Unit = {}
+    onNavigateToUser: () -> Unit = {},
+    onQualitySelected: (Int) -> Unit = {}
 ) {
     val hasSong = song != null
     // 初始落大封面: 歌词未就绪时(加载中/确无), 全屏默认看封面而非空歌词面板;
@@ -100,9 +107,9 @@ fun PlayerCard(
     var showLyrics by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
     // 歌词视图里的小封面点开「歌手 / 专辑」，不把整张封面做成按钮。
-    var coverMenuExpanded by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("ncrust_settings", 0) }
     val coroutineScope = rememberCoroutineScope()
 
     val strings = LocalStrings.current
@@ -118,7 +125,7 @@ fun PlayerCard(
     val isSongSaved = remember(song?.id, libraryTick) {
         song?.let { LibraryManager.isSongSaved(context, it.id) } ?: false
     }
-    // currentPosition / progress 是 4Hz 更新的 StateFlow，直接传引用给需要的子组件，
+    // currentPosition / progress 是 2Hz 更新的 StateFlow，直接传引用给需要的子组件，
     // 让它们在最小作用域（graphicsLayer / Canvas draw / derivedStateOf / 叶子 Text）内订阅，
     // 避免 PlayerCard 本身随位置更新 4Hz 重组
     // duration / qualityIndex / isBuffering downgraded to leaf collect inside FullPlayerControls;
@@ -142,26 +149,51 @@ fun PlayerCard(
     val wideLeftFraction = if (isWidePlayer) 1f - 0.56f * wideSplit else 1f
     // 迷你条与顶栏按钮的触觉反馈
     val haptic = LocalHapticFeedback.current
+    var ambientBitmap by remember(song?.id) { mutableStateOf<Bitmap?>(null) }
+    var ambientColor by remember(song?.id) { mutableStateOf<Color?>(null) }
+    LaunchedEffect(ambientBitmap) {
+        val bitmap = ambientBitmap ?: return@LaunchedEffect
+        ambientColor = withContext(Dispatchers.Default) {
+            val readable = if (bitmap.config == Bitmap.Config.HARDWARE) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            } else {
+                bitmap
+            }
+            try {
+                Palette.from(readable).generate().getDominantColor(0)
+                    .let { Color(it).copy(alpha = 1f) }
+            } finally {
+                if (readable !== bitmap) readable.recycle()
+            }
+        }
+    }
 
     // 唯一封面 overlay：全屏 ↔ miniBar 始终是同一个 cover，只平滑移动/缩放，绝不消失。
     // 宽屏大图落点由左栏"封面区"实测得到（区域化，分辨率无关）。
     var cardRootOrigin by remember { mutableStateOf(Offset.Zero) }
     var wideCoverCenter by remember { mutableStateOf(Offset.Zero) }
     var wideCoverSizePx by remember { mutableStateOf(0f) }
+    // 封面落点跟封面区实测走。用整屏高度反推会在切歌/展开时和控件错位。
+    var portraitCoverCenter by remember { mutableStateOf(Offset.Zero) }
+    val portraitCoverSidePad = with(density) { 32.dp.toPx() }
     val coverSizePx = if (isWidePlayer) {
         // 实测前用兜底尺寸，避免首帧 1px 让 Coil 按 1px 解码成纯色（重进时尤为明显）。
         if (wideCoverSizePx > 0f) wideCoverSizePx
         else minOf(screenWidthPx * 0.4f, screenHeightPx * 0.5f)
-    } else screenWidthPx
+    } else (screenWidthPx - portraitCoverSidePad * 2f).coerceAtLeast(100f)
     val coverSizeDp = with(density) { coverSizePx.toDp() }
     val miniCoverHalfPx = with(density) { 28.dp.toPx() }
     val miniScale = miniCoverHalfPx * 2f / coverSizePx
     val statusBarPx = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         .let { with(density) { it.toPx() } }
-    val miniCoverCenterX = miniCoverHalfPx
-    val miniCoverCenterY = statusBarPx + miniCoverHalfPx
-    val largeCoverCenterX = if (isWidePlayer) wideCoverCenter.x else screenWidthPx / 2f
-    val largeCoverCenterY = if (isWidePlayer) wideCoverCenter.y else screenHeightPx * 0.3f + dp24px
+    val miniCoverCenterX = with(density) { 12.dp.toPx() } + miniCoverHalfPx
+    val miniCoverCenterY = statusBarPx + with(density) { 6.dp.toPx() } + miniCoverHalfPx
+    val largeCoverCenterX = if (isWidePlayer) wideCoverCenter.x
+        else portraitCoverCenter.x.takeIf { it > 0f } ?: screenWidthPx / 2f
+    val topBarBottomPx = statusBarPx + with(density) { 56.dp.toPx() }
+    val largeCoverCenterY = if (isWidePlayer) wideCoverCenter.y
+        else portraitCoverCenter.y.takeIf { it > 0f }
+            ?: (topBarBottomPx + (screenHeightPx - with(density) { 220.dp.toPx() })) / 2f
     val boundsCenter = coverSizePx / 2f
 
     // 完全收起时才激活迷你播放栏；derivedStateOf 将重组限制在阈值穿越处
@@ -275,7 +307,6 @@ fun PlayerCard(
     // 歌词/队列面板可交互(展开 + 面板在前台)时,面板区域内的纵向手势归内部列表滚动。
     // 根节点的整卡拖拽与兜底消费器都不得抢手势——否则在面板上一滑,整卡被拖走、
     // 列表几乎滚不动(issue #23)。面板外的封面/顶栏/大封面模式仍驱动整卡。
-    val topBarBottomPx = statusBarPx + with(density) { 56.dp.toPx() }
     val isPanelInteractive by remember {
         derivedStateOf {
             (lyricsEnabled || queueSlideProgress.value > 0.5f) && progress.value > 0.7f
@@ -434,12 +465,32 @@ fun PlayerCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .zIndex(0f)
                 .graphicsLayer {
                     translationY = statusBarPx * (1f - progress.value)
                 }
-                .background(LocalMetroColors.current.background)
+                .background(
+                    ambientColor?.let { lerp(LocalMetroColors.current.background, it, 0.06f) }
+                        ?: LocalMetroColors.current.background
+                )
         )
-        // 折叠态卡背：卡片整体下移后，miniBar 下方露出的是这张黑底（原底部导航/系统栏
+        if (prefs.getBoolean("dynamic_artwork_background", true)) {
+            ambientBitmap?.let { bitmap ->
+                Image(
+                    painter = remember(bitmap) { BitmapPainter(bitmap.asImageBitmap()) },
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(48.dp)
+                        .graphicsLayer {
+                            alpha = (progress.value * 0.10f).coerceIn(0f, 0.10f)
+                            translationY = statusBarPx * (1f - progress.value)
+                        }
+                )
+            }
+        }
+         // 折叠态卡背：卡片整体下移后，miniBar 下方露出的是这张黑底（原底部导航/系统栏
         // 位置）。折叠时用 surface 盖住，与 miniBar 同色，避免底部黑块；展开时透明。
         Box(
             modifier = Modifier
@@ -454,6 +505,7 @@ fun PlayerCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .zIndex(2f)
                 .systemBarsPadding()
         ) {
             if (hasSong) {
@@ -466,10 +518,11 @@ fun PlayerCard(
                         showLyrics = showLyrics,
                         showQueue = showQueue,
                         progressFlow = playerViewModel.progress,
-                        positionFlow = playerViewModel.currentPosition,
+                        positionFlow = playerViewModel.positionStateMs,
                         durationFlow = playerViewModel.duration,
                         qualityIndexFlow = playerViewModel.currentQualityIndex,
                         qualityOptions = strings.qualityOptions,
+                        onQualitySelected = onQualitySelected,
                         onPlayPause = onPlayPause,
                         onPlayPrevious = onPlayPrevious,
                         onPlayNext = onPlayNext,
@@ -507,9 +560,9 @@ fun PlayerCard(
                                 playerViewModel.seekTo((fraction * dur).toLong())
                             }
                         },
-                        onNavigateToUser = onNavigateToUser,
                         lyricsUnavailable = lyricsUnavailable,
                         previousEnabled = playMode != QueueModes.INFINITY,
+                        compact = (showLyrics || showQueue) && prefs.getBoolean("lyrics_compact_controls", true),
                         landscape = isWidePlayer
                     )
                 }
@@ -538,11 +591,28 @@ fun PlayerCard(
                                 label = "LyricsCrossfade"
                             ) { _ ->
                                 val isBuffering by playerViewModel.isBuffering.collectAsState()
+                                val fontSizeIdx = remember { prefs.getInt("lyrics_font_size", 1) }
+                                val fontSize = when (fontSizeIdx) {
+                                    0 -> 22.sp
+                                    1 -> 26.sp
+                                    2 -> 30.sp
+                                    3 -> 34.sp
+                                    else -> 26.sp
+                                }
+                                val lineHeight = when (fontSizeIdx) {
+                                    0 -> 30.sp
+                                    1 -> 36.sp
+                                    2 -> 42.sp
+                                    3 -> 48.sp
+                                    else -> 36.sp
+                                }
+                                val centerAligned = remember { prefs.getBoolean("lyrics_align_center", false) }
                                 LyricsView(
+                                    songId = song?.id ?: -1L,
                                     lyrics = lyrics,
                                     translatedLyrics = translatedLyrics,
                                     showTranslation = showLyricsTranslation,
-                                    positionFlow = playerViewModel.currentPosition,
+                                    positionFlow = playerViewModel.positionStateMs,
                                     isPlaying = isPlaying,
                                     isBuffering = isBuffering,
                                     isVisible = true,
@@ -551,6 +621,9 @@ fun PlayerCard(
                                     enabled = lyricsEnabled && cardExpandedForInput,
                                     onUserScrolled = {},
                                     isLoading = lyricsLoading,
+                                    fontSize = fontSize,
+                                    lineHeight = lineHeight,
+                                    centerAligned = centerAligned,
                                 )
                             }
                         }
@@ -698,7 +771,7 @@ fun PlayerCard(
                                     )
                                     MetroText(
                                         s.artists?.joinToString("/") { it.name } ?: "",
-                                        color = LocalMetroColors.current.primary,
+                                        color = LocalMetroColors.current.onSurfaceVariant,
                                         style = LocalMetroTypography.current.bodyLarge,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -739,7 +812,7 @@ fun PlayerCard(
                             .fillMaxWidth()
                             .height(56.dp)
                             .graphicsLayer { alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) }
-                            .padding(start = 68.dp, end = 56.dp),
+                            .padding(start = 16.dp, end = 56.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         Column(
@@ -776,6 +849,10 @@ fun PlayerCard(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
+                            .onGloballyPositioned { coords ->
+                                val b = coords.boundsInRoot()
+                                portraitCoverCenter = b.center - cardRootOrigin
+                            }
                             .graphicsLayer { alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) }
                     ) {
                         playerPanels(Modifier.fillMaxSize())
@@ -801,14 +878,14 @@ fun PlayerCard(
                             )
                             MetroText(
                                 s.artists?.joinToString("/") { it.name } ?: "",
-                                color = LocalMetroColors.current.primary,
+                                color = LocalMetroColors.current.onSurfaceVariant,
                                 style = LocalMetroTypography.current.bodyLarge,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(if (showLyrics || showQueue) 4.dp else 16.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -824,8 +901,17 @@ fun PlayerCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .zIndex(1f)
                 .statusBarsPadding()
-                .height(56.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .height(58.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(LocalMetroColors.current.surface.copy(alpha = 0.96f))
+                .border(
+                    0.5.dp,
+                    LocalMetroColors.current.divider.copy(alpha = 0.5f),
+                    RoundedCornerShape(18.dp)
+                )
                 .then(
                     // 暂无播放（hasSong=false）时不可点击展开，避免空白播放器被拉起。
                     if (miniBarEnabled && hasSong) Modifier.clickable(
@@ -835,7 +921,7 @@ fun PlayerCard(
                             coroutineScope.launch {
                                 progress.animateTo(
                                     1f,
-                                    tween(durationMillis = 400, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                                    tween(durationMillis = 240, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
                                 )
                             }
                         }
@@ -844,16 +930,21 @@ fun PlayerCard(
                 .graphicsLayer {
                     alpha = (1f - progress.value * 5f).coerceIn(0f, 1f)
                 }
-                .background(LocalMetroColors.current.surface)
         ) {
             Row(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (hasSong) {
                     val s = song!!
                     // 唯一封面 overlay 会落到这个方形占位处（窄屏与宽屏一致）。
-                    Spacer(modifier = Modifier.fillMaxHeight().aspectRatio(1f))
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .padding(vertical = 4.dp)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                    )
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -922,6 +1013,14 @@ fun PlayerCard(
             }
         }
 
+        // 封面叠在最外层。歌词页缩到顶栏时必须裁掉画出顶栏的部分，
+        // 否则大图会整条压在歌名和歌词上。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(if (isWidePlayer || lyricAnimProgress.value < 0.5f) 4f else 1f)
+                .graphicsLayer { clip = !isWidePlayer && lyricAnimProgress.value >= 0.5f }
+        ) {
         // 唯一封面叠加层：全屏 ↔ miniBar 共用这一个 cover，随 progress 平滑位移/缩放。
         // 窄屏大图=整屏宽居中；宽屏大图=左栏封面区实测中心与尺寸。
         if (hasSong) {
@@ -939,26 +1038,25 @@ fun PlayerCard(
                 model = coverUrl,
                 contentDescription = null,
                 placeholderColor = LocalMetroColors.current.surfaceVariant,
+                 onBitmapReady = { ambientBitmap = it },
                 modifier = Modifier
-                    .then(
-                        if (isWidePlayer) Modifier.size(coverSizeDp)
-                        else Modifier.fillMaxWidth().aspectRatio(1f)
+                    .size(coverSizeDp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .border(
+                        0.5.dp,
+                        LocalMetroColors.current.divider.copy(alpha = 0.35f),
+                        RoundedCornerShape(20.dp)
                     )
                     .graphicsLayer {
                         val p = progress.value
                         val normalizedP = ((p - 0.2f) / 0.8f).coerceIn(0f, 1f)
-                        // 宽屏封面恒为大图（缩到 mini 是窄屏"大封面↔歌词"切换的语义）；
-                        // 宽屏下它随分栏进度在左栏与居中之间平滑移动。
                         val lyricAnimValue = if (isWidePlayer) 0f else lyricAnimProgress.value
-
                         val targetCenterX = largeCoverCenterX + lyricAnimValue * (miniCoverCenterX - largeCoverCenterX)
                         val targetCenterY = largeCoverCenterY + lyricAnimValue * (miniCoverCenterY - largeCoverCenterY)
                         val targetScale = miniScale + (1f - lyricAnimValue) * (1f - miniScale)
-
                         val currentCenterX = miniCoverCenterX + normalizedP * (targetCenterX - miniCoverCenterX)
                         val currentCenterY = miniCoverCenterY + normalizedP * (targetCenterY - miniCoverCenterY)
                         val currentBaseScale = miniScale + normalizedP * (targetScale - miniScale)
-
                         scaleX = currentBaseScale
                         scaleY = currentBaseScale
                         translationX = currentCenterX - boundsCenter
@@ -969,40 +1067,8 @@ fun PlayerCard(
             )
             // 小封面是纯 graphicsLayer 位移，本身没有布局槽，点击热区按它的落点另画。
             // 只在歌词视图（封面缩进顶栏）打开，大封面和迷你条不受影响。
-            if (lyricAnimProgress.value > 0.5f && progress.value > 0.9f && !isWidePlayer) {
-                Box(
-                    modifier = Modifier
-                        .offset {
-                            IntOffset(
-                                (miniCoverCenterX - miniCoverHalfPx).roundToInt(),
-                                (miniCoverCenterY - miniCoverHalfPx).roundToInt()
-                            )
-                        }
-                        .size(56.dp)
-                        .clickable { coverMenuExpanded = true }
-                ) {
-                    MetroDropdownMenu(
-                        expanded = coverMenuExpanded,
-                        onDismissRequest = { coverMenuExpanded = false },
-                        alignment = Alignment.BottomStart
-                    ) {
-                        MetroDropdownMenuItem(
-                            text = strings.actionGoToArtist,
-                            onClick = { coverMenuExpanded = false; onOpenArtist() },
-                            leading = {
-                                MetroIcon(Icons.Default.Person, null, tint = LocalMetroColors.current.onSurface, sizeDp = 20.dp)
-                            }
-                        )
-                        MetroDropdownMenuItem(
-                            text = strings.actionGoToAlbum,
-                            onClick = { coverMenuExpanded = false; onOpenAlbum() },
-                            leading = {
-                                MetroIcon(Icons.Default.Album, null, tint = LocalMetroColors.current.onSurface, sizeDp = 20.dp)
-                            }
-                        )
-                    }
-                }
-            }
+
+        }
         }
 
         // 收起按钮叠加层：z 序最高，保证触摸事件不被任何下层元素拦截
@@ -1010,6 +1076,7 @@ fun PlayerCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .zIndex(3f)
                     .statusBarsPadding()
                     .height(56.dp)
                     .graphicsLayer { alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) }
@@ -1075,6 +1142,7 @@ private fun StableCover(
     placeholderColor: Color,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    onBitmapReady: (Bitmap) -> Unit = {},
 ) {
     val context = LocalContext.current
     val painter = rememberAsyncImagePainter(
@@ -1090,7 +1158,10 @@ private fun StableCover(
     LaunchedEffect(state) {
         val s = state
         if (s is AsyncImagePainter.State.Success) {
-            (s.result.drawable as? BitmapDrawable)?.bitmap?.let { lastBitmap = it }
+            (s.result.drawable as? BitmapDrawable)?.bitmap?.let {
+                lastBitmap = it
+                onBitmapReady(it)
+            }
             timedOut = false
         }
     }

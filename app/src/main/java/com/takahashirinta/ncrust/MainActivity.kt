@@ -4,17 +4,24 @@ import com.takahashirinta.ncrust.ui.theme.LocalNcrustColors
 import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -89,6 +96,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.collect
+import kotlin.coroutines.cancellation.CancellationException
 
 class MainActivity : ComponentActivity() {
     // 外部传入的分享/深链文本（ACTION_SEND / ACTION_VIEW），交由 MainScreen 统一解析。
@@ -100,7 +110,9 @@ class MainActivity : ComponentActivity() {
         handleExternalIntent(intent)
         // 手机锁竖屏、大屏(平板/折叠展开/车机)放开方向。见 applyOrientationPolicy。
         applyOrientationPolicy()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
         RetrofitClient.init(this)
@@ -285,9 +297,10 @@ fun MainScreen(
     // 全为 0、screenHeightDp 又是整屏高度，只有实测高度才准。
     var rootHeightPx by remember { mutableStateOf(0f) }
     val playerViewModel: PlayerViewModel = viewModel()
-    val isPlaying by playerViewModel.isPlaying.collectAsState()
+    val playbackState by playerViewModel.uiState.collectAsState()
+    val isPlaying = playbackState.isPlaying
     var currentSong by remember { mutableStateOf<SongItem?>(null) }
-    val vmCurrentSongId by playerViewModel.currentSongId.collectAsState()
+    val vmCurrentSongId = playbackState.songId
     val context = LocalContext.current
 
     val density = LocalDensity.current
@@ -333,21 +346,17 @@ fun MainScreen(
     val navBarHideOffset = if (isWideLayout) 0f else with(density) { 132.dp.toPx() }
     // ------------------------------------
 
-    // 自 ViewModel 恢复 currentSong 之状态。
-    LaunchedEffect(Unit) {
-        val name = playerViewModel.currentSongName.value
-        val artist = playerViewModel.currentSongArtist.value
-        val artwork = playerViewModel.currentSongArtwork.value
-        val songId = playerViewModel.currentSongId.value
-        if (name != null && songId != null && songId > 0 && currentSong == null) {
-            currentSong = SongItem(
-                id = songId,
-                name = name,
-                artists = if (artist != null) listOf(ArtistItem(name = artist)) else null,
-                album = AlbumItem(id = null, name = "", picUrl = artwork),
-                duration = null
-            )
-        }
+    // Now Playing 的单一投影：冷启动与切歌都从统一快照恢复，不再拼接多个旧 Flow。
+    LaunchedEffect(playbackState.songId, playbackState.title, playbackState.artist, playbackState.artwork) {
+        val songId = playbackState.songId ?: return@LaunchedEffect
+        if (songId <= 0L) return@LaunchedEffect
+        currentSong = SongItem(
+            id = songId,
+            name = playbackState.title.orEmpty(),
+            artists = playbackState.artist?.takeIf { it.isNotEmpty() }?.let { listOf(ArtistItem(name = it)) },
+            album = AlbumItem(id = null, name = "", picUrl = playbackState.artwork.orEmpty()),
+            duration = null
+        )
     }
 
     val progress = remember { Animatable(0f) }
@@ -782,13 +791,13 @@ fun MainScreen(
 
     fun expandCard() {
         coroutineScope.launch {
-            progress.animateTo(1f, tween(400, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+            progress.animateTo(1f, tween(240, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
         }
     }
 
     fun collapseCard() {
         coroutineScope.launch {
-            progress.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+            progress.animateTo(0f, tween(180, easing = FastOutSlowInEasing))
         }
     }
 
@@ -885,14 +894,17 @@ fun MainScreen(
      * 歌单 id 还没缓存时先按收藏顺序开播，id 到手再挂上续播，避免按钮点下去没反应。
      */
     fun playLikedHeartbeat() {
-        playLikedPlaylist()
+        fmMode = false
         playMode = QueueModes.INFINITY
+        playLikedPlaylist()
         coroutineScope.launch(Dispatchers.IO) {
             val id = runCatching {
                 PlaylistApi.getLikedPlaylistId(PlaylistApi.getCurrentUserId())
             }.getOrNull() ?: return@launch
             withContext(Dispatchers.Main) {
                 heartbeatPlaylistId = id
+                playMode = QueueModes.INFINITY
+                fmMode = false
                 persistSession()
             }
         }
@@ -1235,14 +1247,13 @@ fun MainScreen(
                 // 全屏播放器点歌名: 上拉"转到歌手/转到专辑"菜单(复用长按菜单 sheet)
                 currentSong?.let { menuSong = it; menuSongActions = emptyList() }
             },
-            onOpenArtist = { currentSong?.let { resolveAndNavigate(it, toArtist = true) } },
-            onOpenAlbum = { currentSong?.let { resolveAndNavigate(it, toArtist = false) } },
             onSavePlaylist = { /* TODO: 保存歌单 */ },
+            onQualitySelected = { index -> playerViewModel.setQuality(index) },
             onNavigateToUser = {
                 selectedTab = 3
                 if (!isInMain) navController.popBackStack(NavRoutes.HOME, false)
                 coroutineScope.launch {
-                    progress.animateTo(0f, tween(260, easing = FastOutSlowInEasing))
+                    progress.animateTo(0f, tween(180, easing = FastOutSlowInEasing))
                 }
             }
         )
@@ -1290,131 +1301,136 @@ fun MainScreen(
                 // 从上层覆盖它，返回时 nav 只需 slide 详情页出去，tab 屏本来就在下面可见。
                 // 副作用：NavGraph 空 HOME destination 内容为空且不占布局，pointer 天然穿透。
                 Box(modifier = Modifier.fillMaxSize()) {
-                    when (selectedTab) {
-                        0 -> HomeScreen(
-                            onSongClick = { playSongItem(it) },
-                            onPlaylistClick = { playlistId ->
-                                navController.navigate(NavRoutes.playlist(playlistId))
-                            },
-                            onPlayPlaylist = { playlistId ->
-                                coroutineScope.launch {
-                                    try {
-                                        val songs = PlaylistApi.getPlaylistDetail(playlistId)
-                                        if (songs.isNotEmpty()) pendingPlayAllSongs = songs
-                                    } catch (_: Exception) {}
-                                }
-                            },
-                            onPlayDailyAll = { songs ->
-                                // 直接替换队列并从头播放。
-                                // 旧实现循环 addToQueue → 每次都把 currentQueueIndex 推到队尾，
-                                // 而 playSong 播的是 songs[0]，两者错位，导致下一首回绕 0 → 永远回放首曲。
-                                replaceQueueAndPlay(songs)
-                            },
-                            onSongInsertNext = { insertNext(it) },
-                            onSongAppendToQueue = { appendToQueue(it) },
-                            onShowSongMenu = { song, actions -> menuSong = song; menuSongActions = actions },
-                            // 主页「我的电台」入口: 之前一直没传, HomeScreen 的 FM 卡因此永不渲染
-                            onPlayFm = { startFm() }
-                        )
-
-                        1 -> LibraryScreen(
-                            onSongClick = { playSongItem(it) },
-                            onPlayLikedPlaylist = { playLikedPlaylist() },
-                            onPlayLikedHeartbeat = { playLikedHeartbeat() },
-                            onAlbumClick = { albumId -> navController.navigate(NavRoutes.album(albumId)) },
-                            onPlayAlbum = { albumId ->
-                                val albumSongs = LibraryManager.getSongsByAlbumId(context, albumId)
-                                if (albumSongs.isNotEmpty()) {
-                                    pendingPlayAllSongs = albumSongs
-                                } else {
-                                    // 云端收藏的专辑可能不在收藏单曲缓存里，兜底拉专辑详情播放
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(200, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))) +
+                             scaleIn(initialScale = 0.98f, animationSpec = tween(200, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))) togetherWith
+                            fadeOut(animationSpec = tween(150, easing = FastOutSlowInEasing))
+                        },
+                        label = "tabScreenTransition"
+                    ) { tab ->
+                        when (tab) {
+                            0 -> HomeScreen(
+                                onSongClick = { playSongItem(it) },
+                                onPlaylistClick = { playlistId ->
+                                    navController.navigate(NavRoutes.playlist(playlistId))
+                                },
+                                onPlayPlaylist = { playlistId ->
                                     coroutineScope.launch {
                                         try {
-                                            val detail = RetrofitClient.api.getAlbumDetail(albumId)
-                                            val songs = detail.songs?.map {
-                                                SongItem(id = it.id, name = it.name, artists = it.artists, album = it.album, duration = it.getDurationMs())
-                                            }
-                                            if (!songs.isNullOrEmpty()) pendingPlayAllSongs = songs
+                                            val songs = PlaylistApi.getPlaylistDetail(playlistId)
+                                            if (songs.isNotEmpty()) pendingPlayAllSongs = songs
                                         } catch (_: Exception) {}
                                     }
-                                }
-                            },
-                            onPlaylistClick = { pl ->
-                                navController.navigate(NavRoutes.playlist(pl.id, pl.name, pl.coverImgUrl))
-                            },
-                            onPlayPlaylist = { playlistId ->
-                                coroutineScope.launch {
-                                    try {
-                                        val songs = PlaylistApi.getPlaylistDetail(playlistId)
-                                        if (songs.isNotEmpty()) pendingPlayAllSongs = songs
-                                    } catch (_: Exception) {}
-                                }
-                            },
-                            onSongInsertNext = { insertNext(it) },
-                            onSongAppendToQueue = { appendToQueue(it) },
-                            onShowSongMenu = { song, actions -> menuSong = song; menuSongActions = actions },
-                            refreshTrigger = cookieRefreshTrigger
-                        )
+                                },
+                                onPlayDailyAll = { songs ->
+                                    replaceQueueAndPlay(songs)
+                                },
+                                onSongInsertNext = { insertNext(it) },
+                                onSongAppendToQueue = { appendToQueue(it) },
+                                onShowSongMenu = { song, actions -> menuSong = song; menuSongActions = actions },
+                                onPlayFm = { startFm() }
+                            )
 
-                        2 -> SearchScreen(
-                            onSongClick = { playSongItem(it) },
-                            onAlbumClick = { albumId -> navController.navigate(NavRoutes.album(albumId)) },
-                            onArtistClick = { artistId -> navController.navigate(NavRoutes.artist(artistId)) },
-                            onInsertNext = { insertNext(it) },
-                            onAppendToQueue = { appendToQueue(it) },
-                            onShowSongMenu = { song, actions -> menuSong = song; menuSongActions = actions },
-                            onAlbumBatch = { albumId, action ->
-                                coroutineScope.launch {
-                                    try {
-                                        val response = RetrofitClient.api.getAlbumDetail(albumId)
-                                        val songs = (response.songs ?: emptyList()).map { s ->
-                                            SongItem(
-                                                id = s.id,
-                                                name = s.name,
-                                                artists = s.artists,
-                                                album = s.album,
-                                                duration = s.getDurationMs()
-                                            )
+                            1 -> LibraryScreen(
+                                onSongClick = { playSongItem(it) },
+                                onPlayLikedPlaylist = { playLikedPlaylist() },
+                                onPlayLikedHeartbeat = { playLikedHeartbeat() },
+                                onAlbumClick = { albumId -> navController.navigate(NavRoutes.album(albumId)) },
+                                onPlayAlbum = { albumId ->
+                                    val albumSongs = LibraryManager.getSongsByAlbumId(context, albumId)
+                                    if (albumSongs.isNotEmpty()) {
+                                        pendingPlayAllSongs = albumSongs
+                                    } else {
+                                        coroutineScope.launch {
+                                            try {
+                                                val detail = RetrofitClient.api.getAlbumDetail(albumId)
+                                                val songs = detail.songs?.map {
+                                                    SongItem(id = it.id, name = it.name, artists = it.artists, album = it.album, duration = it.getDurationMs())
+                                                }
+                                                if (!songs.isNullOrEmpty()) pendingPlayAllSongs = songs
+                                            } catch (_: Exception) {}
                                         }
-                                        if (songs.isNotEmpty()) {
-                                            when (action) {
-                                                BatchQueueAction.PLAY_NOW -> replaceQueueAndPlay(songs)
-                                                BatchQueueAction.INSERT_NEXT -> insertAllNext(songs)
-                                                BatchQueueAction.APPEND -> appendAllToQueue(songs)
-                                            }
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-                            },
-                            onArtistBatch = { artistName, action ->
-                                coroutineScope.launch {
-                                    try {
-                                        val searchResponse = RetrofitClient.api.search(keyword = artistName, type = 1, limit = 30)
-                                        val songs = (searchResponse.result?.songs ?: emptyList())
-                                            .filter { it.artists?.any { a -> a.name == artistName } == true }
-                                        if (songs.isNotEmpty()) {
-                                            when (action) {
-                                                BatchQueueAction.PLAY_NOW -> replaceQueueAndPlay(songs)
-                                                BatchQueueAction.INSERT_NEXT -> insertAllNext(songs)
-                                                BatchQueueAction.APPEND -> appendAllToQueue(songs)
-                                            }
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-                            },
-                            themeIndex = themeIndex
-                        )
+                                    }
+                                },
+                                onPlaylistClick = { pl ->
+                                    navController.navigate(NavRoutes.playlist(pl.id, pl.name, pl.coverImgUrl))
+                                },
+                                onPlayPlaylist = { playlistId ->
+                                    coroutineScope.launch {
+                                        try {
+                                            val songs = PlaylistApi.getPlaylistDetail(playlistId)
+                                            if (songs.isNotEmpty()) pendingPlayAllSongs = songs
+                                        } catch (_: Exception) {}
+                                    }
+                                },
+                                onSongInsertNext = { insertNext(it) },
+                                onSongAppendToQueue = { appendToQueue(it) },
+                                onShowSongMenu = { song, actions -> menuSong = song; menuSongActions = actions },
+                                refreshTrigger = cookieRefreshTrigger
+                            )
 
-                        3 -> UserScreen(
-                            onOpenAbout = { showAbout = true },
-                            themeIndex = themeIndex,
-                            onThemeChange = onThemeChange,
-                            themeMode = themeMode,
-                            onThemeModeChange = onThemeModeChange,
-                            onShowWebLogin = { showWebLogin = true },
-                            refreshTrigger = cookieRefreshTrigger,
-                            onLanguageChange = onLanguageChange
-                        )
+                            2 -> SearchScreen(
+                                onSongClick = { playSongItem(it) },
+                                onAlbumClick = { albumId -> navController.navigate(NavRoutes.album(albumId)) },
+                                onArtistClick = { artistId -> navController.navigate(NavRoutes.artist(artistId)) },
+                                onInsertNext = { insertNext(it) },
+                                onAppendToQueue = { appendToQueue(it) },
+                                onShowSongMenu = { song, actions -> menuSong = song; menuSongActions = actions },
+                                onAlbumBatch = { albumId, action ->
+                                    coroutineScope.launch {
+                                        try {
+                                            val response = RetrofitClient.api.getAlbumDetail(albumId)
+                                            val songs = (response.songs ?: emptyList()).map { s ->
+                                                SongItem(
+                                                    id = s.id,
+                                                    name = s.name,
+                                                    artists = s.artists,
+                                                    album = s.album,
+                                                    duration = s.getDurationMs()
+                                                )
+                                            }
+                                            if (songs.isNotEmpty()) {
+                                                when (action) {
+                                                    BatchQueueAction.PLAY_NOW -> replaceQueueAndPlay(songs)
+                                                    BatchQueueAction.INSERT_NEXT -> insertAllNext(songs)
+                                                    BatchQueueAction.APPEND -> appendAllToQueue(songs)
+                                                }
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                },
+                                onArtistBatch = { artistName, action ->
+                                    coroutineScope.launch {
+                                        try {
+                                            val searchResponse = RetrofitClient.api.search(keyword = artistName, type = 1, limit = 30)
+                                            val songs = (searchResponse.result?.songs ?: emptyList())
+                                                .filter { it.artists?.any { a -> a.name == artistName } == true }
+                                            if (songs.isNotEmpty()) {
+                                                when (action) {
+                                                    BatchQueueAction.PLAY_NOW -> replaceQueueAndPlay(songs)
+                                                    BatchQueueAction.INSERT_NEXT -> insertAllNext(songs)
+                                                    BatchQueueAction.APPEND -> appendAllToQueue(songs)
+                                                }
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                },
+                                themeIndex = themeIndex
+                            )
+
+                            3 -> UserScreen(
+                                onOpenAbout = { showAbout = true },
+                                themeIndex = themeIndex,
+                                onThemeChange = onThemeChange,
+                                themeMode = themeMode,
+                                onThemeModeChange = onThemeModeChange,
+                                onShowWebLogin = { showWebLogin = true },
+                                refreshTrigger = cookieRefreshTrigger,
+                                onLanguageChange = onLanguageChange
+                            )
+                        }
                     }
                 }
 
@@ -1505,8 +1521,21 @@ fun MainScreen(
         // (实测展开时 Compose:recompose 119 次/65ms)。derivedStateOf 只在布尔值
         // 真正翻转(阈值穿越)时才通知, 动画期间零重组。
         val backEnabled by remember { derivedStateOf { progress.value > 0.01f } }
-        BackHandler(enabled = backEnabled) {
-            collapseCard()
+        PredictiveBackHandler(enabled = backEnabled) { events ->
+            try {
+                events.collect { event ->
+                    // 返回预览只做轻微退缩，避免手势刚开始就把播放器完全收起。
+                    val preview = (1f - event.progress * 0.22f).coerceIn(0.78f, 1f)
+                    progress.snapTo(preview)
+                }
+                // 提交和收尾必须在同一个手势协程内完成，避免旧的 animateTo 抢占最终位置。
+                progress.animateTo(0f, tween(220, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+            } catch (_: CancellationException) {
+                // 用户取消侧滑：恢复展开态；取消态协程已被标记取消，必须切到非取消上下文。
+                withContext(NonCancellable) {
+                    progress.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
+                }
+            }
         }
     }
 }

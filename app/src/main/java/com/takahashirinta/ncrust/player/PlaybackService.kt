@@ -89,6 +89,10 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_ACTUAL_LEVEL = "ncrust_actual_level"
 
         var onProgressUpdate: ((Long, Long) -> Unit)? = null
+
+        /** 用户 seek、切 item、循环要立刻把进度推给 UI。内部跳变（period 对齐）仍交给 500ms 心跳。 */
+        internal fun shouldPublishPositionNow(reason: Int): Boolean =
+            reason != Player.DISCONTINUITY_REASON_INTERNAL
         var onPlaybackEnded: (() -> Unit)? = null
         var onPlaybackPrevious: (() -> Unit)? = null
         var onIsPlayingChanged: ((Boolean) -> Unit)? = null
@@ -198,6 +202,17 @@ class PlaybackService : MediaLibraryService() {
                 PlaybackStateManager.updatePlayingState(this@PlaybackService, isPlaying)
                 updatePlaybackState()
                 updateNotify()
+            }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                // seek / 循环 / 切 item 都走这里。心跳 500ms 一次，不在这里立刻上报的话，
+                // 歌词外推会继续按 seek 前的锚点往前跑，最多偏一秒。
+                if (shouldPublishPositionNow(reason)) {
+                    onProgressUpdate?.invoke(player.currentPosition, player.duration)
+                }
             }
             override fun onPlayerError(error: PlaybackException) {
                 // 之前完全没有错误处理:解码/取流失败后播放器静默停在 IDLE,
@@ -596,7 +611,7 @@ class PlaybackService : MediaLibraryService() {
                     Palette.from(bitmap).generate { palette ->
                         // palette 回调是异步的, 同样做代数校验
                         if (gen != artworkGeneration) return@generate
-                        palette?.getDominantColor(0xFF1DB954.toInt())?.let {
+                        palette?.getDominantColor(0xFFFF6900.toInt())?.let {
                             currentDominantColor = it
                         }
                         scope.launch(Dispatchers.Main) {

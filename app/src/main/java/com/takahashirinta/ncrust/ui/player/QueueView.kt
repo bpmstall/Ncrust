@@ -380,13 +380,13 @@ fun QueueView(
                         // Sokuou 阻尼弹簧: 拖动中让位动作有惯性与阻尼, 不硬切不振荡。
                         // 落定瞬间(dragging 已清)让位直接归零——与槽位跳变同帧发生、
                         // 相互抵消, 其余卡片不产生多余移动("落定后还抖一下"的来源)。
-                        val animatedShift = animateFloatAsState(
-                            targetValue = shiftTarget,
-                            animationSpec = if (draggingQueueIndex >= 0)
-                                sokuouSpring(response = 0.22f, dampingRatio = 1f)
-                            else tween(0),
-                            label = "queueRowShift"
-                        ).value
+                        val animatedShift = if (draggingQueueIndex >= 0) {
+                            animateFloatAsState(
+                                targetValue = shiftTarget,
+                                animationSpec = sokuouSpring(response = 0.22f, dampingRatio = 1f),
+                                label = "queueRowShift"
+                            ).value
+                        } else 0f
                         // 普通滚动不维护每行的颜色动画和 placement 动画；高亮只在拖拽
                         // 期间出现，视觉变化不值得把状态带进所有可见行。
                         Box(
@@ -402,12 +402,14 @@ fun QueueView(
                                 .background(
                                     if (highlighted) LocalMetroColors.current.surfaceVariant else Color.Transparent
                                 )
-                                // 记录被拖行高度（让位距离换算基座）
-                                .onGloballyPositioned {
-                                    if (qi == draggingQueueIndex) {
-                                        draggedRowHeight = it.size.height.toFloat()
-                                    }
-                                }
+                                .then(
+                                    if (draggingQueueIndex >= 0 && qi == draggingQueueIndex) {
+                                        // 只有拖拽行需要尺寸；普通滚动不挂布局回调。
+                                        Modifier.onGloballyPositioned {
+                                            draggedRowHeight = it.size.height.toFloat()
+                                        }
+                                    } else Modifier
+                                )
                         ) {
                             SongCard(
                                 song = song,
