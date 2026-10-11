@@ -1586,30 +1586,6 @@ fun MainScreen(
             }
         }
 
-        // 全屏播放器展开时拦截系统返回：先收起播放器而不是直接退出应用。
-        // 关键：必须在展开时动态挂载 PredictiveBackHandler。如果在 cold launch 静态挂载常驻 handler，
-        // 后续打开的二级页（如歌手、专辑、歌单）在 OnBackPressedDispatcher 中的注册顺序会晚于播放器，
-        // 导致在二级页重新拉起播放器后，返回手势优先命中二级页而非播放器。
-        // 用 if (backEnabled) 动态挂载，确保播放器展开时永远位于调度器最顶层；收起时自动注销。
-        val backEnabled by remember { derivedStateOf { progress.value > 0.01f } }
-        if (backEnabled) {
-            PredictiveBackHandler(enabled = true) { events ->
-                try {
-                    events.collect { event ->
-                        // 返回预览只做轻微退缩，避免手势刚开始就把播放器完全收起。
-                        val preview = (1f - event.progress * 0.22f).coerceIn(0.78f, 1f)
-                        progress.snapTo(preview)
-                    }
-                    // 提交和收尾必须在同一个手势协程内完成，避免旧的 animateTo 抢占最终位置。
-                    progress.animateTo(0f, tween(220, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
-                } catch (_: CancellationException) {
-                    // 用户取消侧滑：恢复展开态；取消态协程已被标记取消，必须切到非取消上下文。
-                    withContext(NonCancellable) {
-                        progress.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
-                    }
-                }
-            }
-        }
         }
     }
 }

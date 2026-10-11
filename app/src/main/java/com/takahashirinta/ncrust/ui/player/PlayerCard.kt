@@ -12,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.gestures.detectTapGestures
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -296,7 +298,10 @@ fun PlayerCard(
         }
     }
 
-    // 播放器内部视图返回手势拦截：歌词界面或播放列表界面展开时，返回先回到封面界面，而不是直接收起播放器
+    // 播放器内部视图返回手势拦截：统一单点管理
+    // 1. 歌词界面展开时 -> 返回先回到封面界面
+    // 2. 播放列表界面展开时 -> 返回先回到封面界面
+    // 3. 封面界面（纯播放器） -> 返回手势收起播放器（支持预测性退缩，并在提交后在 NonCancellable 上下文中平滑动画至 0，绝不因 handler 注销而反弹）
     if (progress.value > 0.01f) {
         if (showLyrics) {
             PredictiveBackHandler(enabled = true) { events ->
@@ -311,6 +316,26 @@ fun PlayerCard(
                     events.collect {}
                     showQueue = false
                 } catch (_: CancellationException) {}
+            }
+        } else {
+            PredictiveBackHandler(enabled = true) { events ->
+                var isCommitted = false
+                try {
+                    events.collect { event ->
+                        val preview = (1f - event.progress * 0.22f).coerceIn(0.78f, 1f)
+                        progress.snapTo(preview)
+                    }
+                    isCommitted = true
+                    withContext(NonCancellable) {
+                        progress.animateTo(0f, tween(220, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)))
+                    }
+                } catch (_: CancellationException) {
+                    if (!isCommitted) {
+                        withContext(NonCancellable) {
+                            progress.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
+                        }
+                    }
+                }
             }
         }
     }
