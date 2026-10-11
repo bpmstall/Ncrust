@@ -90,6 +90,66 @@ fun DetailScaffold(
     header: @Composable () -> Unit,
     content: LazyListScope.() -> Unit
 ) {
+    DetailScaffoldImpl(
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        onBack = onBack,
+        isLoading = isLoading,
+        hasCachedContent = hasCachedContent,
+        error = error,
+        onRetry = onRetry,
+        onPlayAll = onPlayAll,
+        header = header,
+        body = null,
+        content = content
+    )
+}
+
+@Composable
+fun DetailScaffold(
+    title: String,
+    subtitle: String? = null,
+    coverUrl: String? = null,
+    onBack: () -> Unit,
+    isLoading: Boolean = false,
+    hasCachedContent: Boolean = false,
+    error: String? = null,
+    onRetry: (() -> Unit)? = null,
+    header: @Composable () -> Unit,
+    body: @Composable () -> Unit
+) {
+    DetailScaffoldImpl(
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        onBack = onBack,
+        isLoading = isLoading,
+        hasCachedContent = hasCachedContent,
+        error = error,
+        onRetry = onRetry,
+        onPlayAll = null,
+        header = header,
+        body = body,
+        content = null
+    )
+}
+
+@Composable
+private fun DetailScaffoldImpl(
+    title: String,
+    subtitle: String? = null,
+    coverUrl: String? = null,
+    onBack: () -> Unit,
+    isLoading: Boolean = false,
+    hasCachedContent: Boolean = false,
+    error: String? = null,
+    onRetry: (() -> Unit)? = null,
+    onPlayAll: (() -> Unit)? = null,
+    header: @Composable () -> Unit,
+    body: (@Composable () -> Unit)? = null,
+    content: (LazyListScope.() -> Unit)? = null
+) {
     val strings = LocalStrings.current
     val listState = rememberLazyListState()
     val density = LocalDensity.current
@@ -250,8 +310,8 @@ fun DetailScaffold(
                     // 专辑页首屏几十行歌曲会跟着重排，120Hz 上就是打开时的掉帧。
                     val reveal = remember { Animatable(0f) }
                     LaunchedEffect(Unit) { reveal.animateTo(1f, SokuouTweens.QuickSwitch) }
-                    CompositionLocalProvider(LocalDetailTransitionProgress provides transitionProgressProvider) {
-                        LazyColumn(
+                    if (body != null) {
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
@@ -260,13 +320,32 @@ fun DetailScaffold(
                                         alpha = p
                                         translationY = 12.dp.toPx() * (1f - p)
                                     }
-                                },
-                            state = listState,
-                            contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
-                            flingBehavior = rememberMetroFlingBehavior()
+                                }
                         ) {
-                            item { header() }
-                            content()
+                            header()
+                            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                body()
+                            }
+                        }
+                    } else if (content != null) {
+                        CompositionLocalProvider(LocalDetailTransitionProgress provides transitionProgressProvider) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        val p = reveal.value
+                                        if (p < 1f) {
+                                            alpha = p
+                                            translationY = 12.dp.toPx() * (1f - p)
+                                        }
+                                    },
+                                state = listState,
+                                contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
+                                flingBehavior = rememberMetroFlingBehavior()
+                            ) {
+                                item { header() }
+                                content()
+                            }
                         }
                     }
                 }

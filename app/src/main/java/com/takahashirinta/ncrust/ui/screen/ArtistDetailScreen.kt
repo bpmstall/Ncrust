@@ -24,6 +24,11 @@ import com.takahashirinta.ncrust.network.RetrofitClient
 import com.takahashirinta.ncrust.network.SongItem
 import com.takahashirinta.ncrust.network.model.*
 import com.takahashirinta.ncrust.network.CoverUrls
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.lazy.LazyColumn
+import io.github.takahashirinta.kanesumi.anim.sokuou.rememberMetroFlingBehavior
+import com.takahashirinta.ncrust.ui.BottomOverlayInsetDp
 import com.takahashirinta.ncrust.ui.components.DetailScaffold
 import com.takahashirinta.ncrust.ui.components.SongCard
 import com.takahashirinta.ncrust.ui.components.SongCardStyle
@@ -67,9 +72,9 @@ fun ArtistDetailScreen(
     var albums by remember(artistId) { mutableStateOf<List<ArtistAlbumItem>>(cached?.hotAlbums ?: emptyList()) }
     var isLoading by remember(artistId) { mutableStateOf(cached == null) }
     var error by remember(artistId) { mutableStateOf<String?>(null) }
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val context = LocalContext.current
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     val strings = LocalStrings.current
 
     fun loadData(showLoader: Boolean) {
@@ -157,62 +162,79 @@ fun ArtistDetailScreen(
                 Spacer(Modifier.height(20.dp))
                 MetroTabRow(
                     items = listOf(MetroTabItem(strings.categoryAlbums), MetroTabItem(strings.categoryTracks)),
-                    selectedTabIndex = selectedTab,
-                    onTabSelected = { index -> selectedTab = index }
+                    selectedTabIndex = pagerState.currentPage,
+                    onTabSelected = { index ->
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    }
                 )
                 Spacer(Modifier.height(12.dp))
             }
         },
-        content = {
-            when (selectedTab) {
-                0 -> {
-                    if (albums.isEmpty()) {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+        body = {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> {
+                        if (albums.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 MetroText(strings.noAlbums, color = LocalMetroColors.current.onSurfaceVariant, style = TextStyle(fontSize = 16.sp))
                             }
-                        }
-                    } else {
-                        items(albumRows, key = { row -> row.first().id }) { row ->
-                            // 边到边 tile：spacedBy 2dp 制造 Metro 拼贴感。
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                for (album in row) {
-                                    ArtistAlbumGridItem(album = album, modifier = Modifier.weight(1f), onClick = { onAlbumClick(album.id) })
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
+                                flingBehavior = rememberMetroFlingBehavior()
+                            ) {
+                                items(albumRows, key = { row -> row.first().id }) { row ->
+                                    // 边到边 tile：spacedBy 2dp 制造 Metro 拼贴感。
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        for (album in row) {
+                                            ArtistAlbumGridItem(album = album, modifier = Modifier.weight(1f), onClick = { onAlbumClick(album.id) })
+                                        }
+                                        if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                    Spacer(Modifier.height(2.dp))
                                 }
-                                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
                             }
-                            Spacer(Modifier.height(2.dp))
                         }
                     }
-                }
-                1 -> {
-                    if (hotSongs.isEmpty()) {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                    1 -> {
+                        if (hotSongs.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 MetroText(strings.noHotSongs, color = LocalMetroColors.current.onSurfaceVariant, style = TextStyle(fontSize = 16.sp))
                             }
-                        }
-                    } else {
-                        items(hotSongItems, key = { it.id }) { songItem ->
-                            SongCard(
-                                song = songItem,
-                                style = SongCardStyle.COMPACT,
-                                onClick = { onSongClick(songItem) },
-                                onShowMenu = {
-                                    onShowSongMenu(songItem, listOf(
-                                        SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
-                                            LibraryManager.saveSong(context, songItem)
-                                            Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
-                                        },
-                                        SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
-                                            onSongInsertNext(songItem)
-                                        },
-                                        SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
-                                            onSongAppendToQueue(songItem)
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = BottomOverlayInsetDp),
+                                flingBehavior = rememberMetroFlingBehavior()
+                            ) {
+                                items(hotSongItems, key = { it.id }) { songItem ->
+                                    SongCard(
+                                        song = songItem,
+                                        style = SongCardStyle.COMPACT,
+                                        onClick = { onSongClick(songItem) },
+                                        onShowMenu = {
+                                            onShowSongMenu(songItem, listOf(
+                                                SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
+                                                    LibraryManager.saveSong(context, songItem)
+                                                    Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
+                                                },
+                                                SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
+                                                    onSongInsertNext(songItem)
+                                                },
+                                                SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
+                                                    onSongAppendToQueue(songItem)
+                                                }
+                                            ))
                                         }
-                                    ))
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
