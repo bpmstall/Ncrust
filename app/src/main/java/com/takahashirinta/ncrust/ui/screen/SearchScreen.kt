@@ -12,6 +12,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -134,15 +137,18 @@ fun SearchScreen(
         // 背景由 MainScreen 外层 Box 统一填充，此处不重复画一层
         Column(modifier = Modifier.fillMaxSize()) {
             // Search input
-            // BasicTextField 本身没有 M3 TextField 的隐式 56dp min-height 与内 padding，
-            // 得手动在 decorationBox 里补齐——heightIn(min=56.dp) 保住触控区高度，内容
-            // 纵向居中、左右 16dp 内边距对齐 M3 视觉。否则搜索框会塌成一条 20dp 高的
-            // 细条，看着像被压扁的 Chip。
+            // 搜索框：现代圆角微轮廓造型，左侧带检索图标，居中对齐并保留触控区高度
+            val searchShape = RoundedCornerShape(10.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .background(desaturatedFill)
+                    .background(desaturatedFill, searchShape)
+                    .border(
+                        1.dp,
+                        LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.25f),
+                        searchShape
+                    )
             ) {
                 BasicTextField(
                     value = query,
@@ -151,37 +157,51 @@ fun SearchScreen(
                     singleLine = true,
                     keyboardActions = KeyboardActions(onDone = { dismissKeyboard() }),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    textStyle = TextStyle(color = LocalMetroColors.current.onBackground, fontSize = 18.sp),
+                    textStyle = TextStyle(color = LocalMetroColors.current.onBackground, fontSize = 16.sp),
                     cursorBrush = SolidColor(LocalMetroColors.current.onBackground),
                     decorationBox = { innerTextField ->
-                        Box(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 56.dp)
-                                .padding(horizontal = 16.dp),
-                            contentAlignment = Alignment.CenterStart
+                                .heightIn(min = 52.dp)
+                                .padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (query.isEmpty()) {
-                                MetroText(
-                                    text = strings.searchPlaceholder,
-                                    color = LocalMetroColors.current.onBackground.copy(alpha = 0.5f),
-                                    style = TextStyle(fontSize = 18.sp),
-                                )
-                            }
-                            innerTextField()
-                            Row(
-                                modifier = Modifier.align(Alignment.CenterEnd),
-                                verticalAlignment = Alignment.CenterVertically
+                            MetroIcon(
+                                imageVector = AppIcons.NavSearch,
+                                contentDescription = null,
+                                tint = LocalMetroColors.current.onBackground.copy(alpha = 0.5f),
+                                sizeDp = 22.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.CenterStart
                             ) {
-                                if (isLoading) MetroProgressIndicator(
-                                    sizeDp = 24.dp,
+                                if (query.isEmpty()) {
+                                    MetroText(
+                                        text = strings.searchPlaceholder,
+                                        color = LocalMetroColors.current.onBackground.copy(alpha = 0.5f),
+                                        style = TextStyle(fontSize = 16.sp),
+                                    )
+                                }
+                                innerTextField()
+                            }
+                            if (isLoading) {
+                                Spacer(Modifier.width(8.dp))
+                                MetroProgressIndicator(
+                                    sizeDp = 20.dp,
                                     color = currentThemeColor,
                                 )
-                                if (query.isNotEmpty()) MetroIconButton(onClick = { viewModel.clearQuery() }) {
+                            }
+                            if (query.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                MetroIconButton(onClick = { viewModel.clearQuery() }) {
                                     MetroIcon(
-                                        imageVector = Icons.Default.Clear,
+                                        imageVector = AppIcons.Close,
                                         contentDescription = strings.clearSearchButton,
                                         tint = LocalMetroColors.current.onBackground.copy(alpha = 0.7f),
+                                        sizeDp = 20.dp
                                     )
                                 }
                             }
@@ -398,16 +418,16 @@ fun SearchScreen(
                                         },
                                         onShowMenu = {
                                             onShowSongMenu(item, listOf(
-                                                SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
+                                                SongMenuAction(AppIcons.Add, strings.actionAddToLibrary) {
                                                     SearchHistoryManager.addSong(context, item)
                                                     LibraryManager.saveSong(context, item)
                                                     Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
                                                 },
-                                                SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
+                                                SongMenuAction(AppIcons.Queue, strings.actionInsertNext) {
                                                     SearchHistoryManager.addSong(context, item)
                                                     onInsertNext(item)
                                                 },
-                                                SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
+                                                SongMenuAction(AppIcons.Queue, strings.actionAppendToQueue) {
                                                     SearchHistoryManager.addSong(context, item)
                                                     onAppendToQueue(item)
                                                 }

@@ -1,5 +1,13 @@
 package com.takahashirinta.ncrust.ui.screen
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -663,6 +671,56 @@ private fun ProfileBlock(
 }
 
 /**
+ * 现代圆角胶囊开关：跟手滑块 + 平滑三次贝塞尔过渡，提供细腻质感。
+ */
+@Composable
+private fun ModernSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    accentColor: Color = LocalMetroColors.current.primary,
+    trackOffColor: Color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.3f),
+) {
+    val progress = remember { Animatable(if (checked) 1f else 0f) }
+    LaunchedEffect(checked) {
+        progress.animateTo(
+            targetValue = if (checked) 1f else 0f,
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+        )
+    }
+    val density = LocalDensity.current
+    val trackShape = RoundedCornerShape(13.dp)
+    val thumbShape = CircleShape
+
+    Box(
+        modifier = modifier
+            .width(46.dp)
+            .height(26.dp)
+            .background(
+                color = lerp(trackOffColor, accentColor, progress.value),
+                shape = trackShape
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onCheckedChange(!checked) }
+            )
+            .padding(horizontal = 3.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        val thumbOffsetPx = with(density) { (20.dp * progress.value).toPx() }
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    translationX = thumbOffsetPx
+                }
+                .size(20.dp)
+                .background(Color.White, thumbShape)
+        )
+    }
+}
+
+/**
  * 开关设置行：标题与 Switch 同一行垂直居中，描述（可选）另起一行。
  * 描述不参与对齐，避免 Switch 被顶到与描述顶部对齐。
  */
@@ -686,7 +744,7 @@ private fun SettingSwitchRow(
             modifier = Modifier.weight(1f)
         )
         Spacer(Modifier.width(16.dp))
-        MetroSwitch(checked = checked, onCheckedChange = onCheckedChange)
+        ModernSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
     if (description != null) {
         MetroText(
@@ -712,6 +770,7 @@ private fun ThemeModeSelector(
         ThemeMode.DARK to labels.second,
         ThemeMode.LIGHT to labels.third
     )
+    val chipShape = RoundedCornerShape(8.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -726,11 +785,13 @@ private fun ThemeModeSelector(
                     .border(
                         1.dp,
                         if (active) LocalMetroColors.current.primary
-                        else LocalMetroColors.current.divider
+                        else LocalMetroColors.current.divider.copy(alpha = 0.5f),
+                        chipShape
                     )
                     .background(
                         if (active) LocalMetroColors.current.primary.copy(alpha = 0.14f)
-                        else Color.Transparent
+                        else Color.Transparent,
+                        chipShape
                     )
                     .clickable { onSelect(mode) }
                     .padding(vertical = 10.dp),
@@ -757,10 +818,16 @@ private fun ClearCacheConfirmDialog(
 ) {
     val strings = LocalStrings.current
     Dialog(onDismissRequest = onDismiss) {
+        val dialogShape = RoundedCornerShape(16.dp)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(LocalMetroColors.current.surface)
+                .background(LocalMetroColors.current.surface, dialogShape)
+                .border(
+                    1.dp,
+                    LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.2f),
+                    dialogShape
+                )
                 .padding(24.dp)
         ) {
             MetroText(
@@ -853,10 +920,16 @@ private fun AccountDialog(
 ) {
     val strings = LocalStrings.current
     Dialog(onDismissRequest = onDismiss) {
+        val dialogShape = RoundedCornerShape(16.dp)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(LocalMetroColors.current.surface)
+                .background(LocalMetroColors.current.surface, dialogShape)
+                .border(
+                    1.dp,
+                    LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.2f),
+                    dialogShape
+                )
                 .padding(24.dp)
         ) {
             MetroText(
@@ -926,11 +999,12 @@ private fun DialogButton(
     accent: Boolean,
     onClick: () -> Unit
 ) {
+    val btnShape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
             .then(
-                if (accent) Modifier.background(LocalMetroColors.current.primary)
-                else Modifier.border(1.dp, LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.4f))
+                if (accent) Modifier.background(LocalMetroColors.current.primary, btnShape)
+                else Modifier.border(1.dp, LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.4f), btnShape)
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp)
@@ -954,12 +1028,13 @@ private fun FullWidthDialogButton(
     textColor: Color = LocalMetroColors.current.onBackground,
     onClick: () -> Unit
 ) {
+    val btnShape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (accent) Modifier.background(LocalMetroColors.current.primary)
-                else Modifier.border(1.dp, borderColor)
+                if (accent) Modifier.background(LocalMetroColors.current.primary, btnShape)
+                else Modifier.border(1.dp, borderColor, btnShape)
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
