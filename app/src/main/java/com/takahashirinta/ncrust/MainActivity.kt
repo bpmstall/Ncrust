@@ -101,6 +101,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collect
 import kotlin.coroutines.cancellation.CancellationException
 
+val LocalPlayerExpanded = androidx.compose.runtime.compositionLocalOf { false }
+
 class MainActivity : ComponentActivity() {
     // 外部传入的分享/深链文本（ACTION_SEND / ACTION_VIEW），交由 MainScreen 统一解析。
     // 冷启动与已在前台（onNewIntent）两条路径都会写入。
@@ -1154,6 +1156,7 @@ fun MainScreen(
         }
     }
     if (showWebLogin) {
+        BackHandler { showWebLogin = false }
         Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
             AndroidView(
                 factory = { ctx ->
@@ -1209,9 +1212,11 @@ fun MainScreen(
         selectedTab = tab
         if (!isInMain) navController.popBackStack(NavRoutes.HOME, false)
     }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
+    val isPlayerExpanded by remember { derivedStateOf { progress.value > 0.01f } }
+    CompositionLocalProvider(LocalPlayerExpanded provides isPlayerExpanded) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
             // 车机把应用窗口内容区 inset 到系统栏之间（实测内容区 620px，但
             // WindowInsets 全为 0），所以这里不再自己 padding，只让背景铺满内容区；
             // 位置计算用 contentHeightPx（扣掉系统栏的资源兜底值）。
@@ -1510,6 +1515,12 @@ fun MainScreen(
 
         menuSong?.let { song ->
             val menuStrings = LocalStrings.current
+            PredictiveBackHandler(enabled = true) { events ->
+                try {
+                    events.collect {}
+                    menuSong = null
+                } catch (_: CancellationException) {}
+            }
             Box(Modifier.fillMaxSize().zIndex(2f)) {
                 SongMenuSheet(
                     song = song,
@@ -1554,6 +1565,7 @@ fun MainScreen(
                     }
                 }
             }
+        }
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.takahashirinta.ncrust.ui.components
 
+import com.takahashirinta.ncrust.LocalPlayerExpanded
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -146,7 +147,9 @@ fun DetailScaffold(
     val backTranslateY = remember { Animatable(0f) }
     val backAlpha = remember { Animatable(1f) }
 
-    PredictiveBackHandler(enabled = true) { events ->
+    val isPlayerExpanded = LocalPlayerExpanded.current
+
+    PredictiveBackHandler(enabled = !isPlayerExpanded) { events ->
         try {
             events.collect { event ->
                 val progress = event.progress
@@ -290,16 +293,40 @@ fun DetailScaffold(
         // 外层 MainActivity 容器已处理 systemBars inset，此处贴紧顶边（高度 56dp），不重复 statusBarsPadding() 造成多余间隙。
         val barBgBase = LocalMetroColors.current.background
         val barBgColor = dominantColor?.let { lerp(barBgBase, it, 0.18f) } ?: barBgBase
+
+        // 吸顶栏背景与下沿柔和过渡层：56dp 顶栏底色 + 20dp 向下渐变隐退虚化，使列表内容向上滚入时自然隐去，消除生硬割裂线
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .graphicsLayer {
+                    alpha = transitionProgressProvider()
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .background(barBgColor)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 56.dp)
+                    .height(20.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to barBgColor,
+                            1f to Color.Transparent
+                        )
+                    )
+            )
+        }
+
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .drawBehind {
-                    val p = transitionProgressProvider()
-                    if (p > 0f) {
-                        drawRect(barBgColor.copy(alpha = p))
-                    }
-                }
                 .height(56.dp)
                 .padding(end = 16.dp),
             verticalAlignment = Alignment.CenterVertically

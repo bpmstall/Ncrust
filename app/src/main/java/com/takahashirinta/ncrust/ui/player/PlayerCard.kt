@@ -9,6 +9,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -290,6 +293,39 @@ fun PlayerCard(
                 // 封面展开后重置滑动位置，为下次 b→c 准备
                 queueSlideProgress.snapTo(0f)
             }
+        }
+    }
+
+    // 播放器内部视图返回手势拦截：歌词界面或播放列表界面展开时，返回先回到封面界面，而不是直接收起播放器
+    if (progress.value > 0.01f) {
+        if (showLyrics) {
+            PredictiveBackHandler(enabled = true) { events ->
+                try {
+                    events.collect {}
+                    showLyrics = false
+                } catch (_: CancellationException) {}
+            }
+        } else if (showQueue) {
+            PredictiveBackHandler(enabled = true) { events ->
+                try {
+                    events.collect {}
+                    showQueue = false
+                } catch (_: CancellationException) {}
+            }
+        }
+    }
+
+    val onCoverTap: () -> Unit = {
+        showLyrics = true
+    }
+    val onCoverDoubleTap: () -> Unit = {
+        val cur = song
+        if (cur != null) {
+            if (!LibraryManager.isSongSaved(context, cur.id)) {
+                LibraryManager.saveSong(context, cur)
+                libraryTick++
+            }
+            Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -591,6 +627,11 @@ fun PlayerCard(
                                     alpha = lyricAnimProgress.value
                                     translationX = -queueSlideProgress.value * size.width
                                 }
+                                .pointerInput(Unit) {
+                                    detectTapGestures {
+                                        showLyrics = false
+                                    }
+                                }
                         ) {
                             if (!isWidePlayer) {
                                 Column(
@@ -669,6 +710,7 @@ fun PlayerCard(
                                         fontSize = fontSize,
                                         lineHeight = lineHeight,
                                         centerAligned = centerAligned,
+                                        onBackgroundClick = { showLyrics = false },
                                     )
                                 }
                             }
@@ -862,12 +904,13 @@ fun PlayerCard(
                                 portraitCoverAvailableHeightPx = coords.size.height.toFloat()
                             }
                             .graphicsLayer { alpha = ((progress.value - 0.7f) / 0.3f).coerceIn(0f, 1f) }
-                            .clickable(
-                                enabled = progress.value > 0.8f && !showLyrics && !showQueue,
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) {
-                                showLyrics = true
+                            .pointerInput(progress.value > 0.8f && !showLyrics && !showQueue, song?.id) {
+                                if (progress.value > 0.8f && !showLyrics && !showQueue) {
+                                    detectTapGestures(
+                                        onTap = { onCoverTap() },
+                                        onDoubleTap = { onCoverDoubleTap() }
+                                    )
+                                }
                             }
                     ) {
                         playerPanels(Modifier.fillMaxSize())
@@ -1083,12 +1126,13 @@ fun PlayerCard(
                         translationY = currentCenterY - boundsCenter
                         transformOrigin = TransformOrigin(0.5f, 0.5f)
                     }
-                    .clickable(
-                        enabled = progress.value > 0.8f && !showLyrics && !showQueue,
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) {
-                        showLyrics = true
+                    .pointerInput(progress.value > 0.8f && !showLyrics && !showQueue, song?.id) {
+                        if (progress.value > 0.8f && !showLyrics && !showQueue) {
+                            detectTapGestures(
+                                onTap = { onCoverTap() },
+                                onDoubleTap = { onCoverDoubleTap() }
+                            )
+                        }
                     },
                 contentScale = ContentScale.Fit
             )

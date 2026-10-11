@@ -1,11 +1,15 @@
 package com.takahashirinta.ncrust.ui.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +66,7 @@ fun LyricsView(
     fontSize: androidx.compose.ui.unit.TextUnit = 26.sp,
     lineHeight: androidx.compose.ui.unit.TextUnit = 36.sp,
     centerAligned: Boolean = false,
+    onBackgroundClick: () -> Unit = {},
 ) {
     val strings = LocalStrings.current
 
@@ -153,10 +158,28 @@ fun LyricsView(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(enabled) {
+                if (enabled) {
+                    detectTapGestures {
+                        onBackgroundClick()
+                    }
+                }
+            }
+    ) {
         if (lyrics.isEmpty()) {
             if (!isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { onBackgroundClick() },
+                    contentAlignment = Alignment.Center
+                ) {
                     MetroText(strings.noLyrics, color = LocalMetroColors.current.onSurfaceVariant, style = TextStyle(fontSize = 18.sp))
                 }
             }
