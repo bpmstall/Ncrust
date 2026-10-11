@@ -536,7 +536,7 @@ fun MainScreen(
      * 已入队的歌会被过滤, 防止环绕重复; 数据源为空时兜底每日推荐, 避免断播。
      * in-flight 防重入:预载心跳与播完路径可能几乎同时触发。
      */
-    fun launchInfinity() {
+    fun launchInfinity(playImmediately: Boolean = false) {
         if (infinityJob.value?.isActive == true) return
         val seed = playbackQueue.getOrNull(currentQueueIndex) ?: return
         val existingIds = playbackQueue.map { it.id }.toSet()
@@ -560,13 +560,20 @@ fun MainScreen(
                 }.getOrDefault(emptyList())
             if (continuation.isEmpty()) return@launch
             withContext(Dispatchers.Main) {
+                val wasEmpty = playbackQueue.isEmpty()
+                val isPlaybackActive = playerViewModel.isPlaying.value && currentSong != null
+                val needAutoPlay = playImmediately || wasEmpty || !isPlaybackActive
+
                 playbackQueue.addAll(continuation)
                 val startIdx = playbackQueue.size - continuation.size
                 if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
-                playFromQueue(startIdx)
+                if (needAutoPlay) {
+                    playFromQueue(startIdx)
+                }
                 persistSession()
-                // 为无缝衔接立即预载 infinity 首曲之后的一首
-                playbackQueue.getOrNull(startIdx + 1)?.let { next ->
+                // 为无缝衔接立即预载下一首
+                val nextIdx = if (needAutoPlay) startIdx + 1 else currentQueueIndex + 1
+                playbackQueue.getOrNull(nextIdx)?.let { next ->
                     val (t, a, w) = songParams(next)
                     playerViewModel.preloadNextSong(next.id, t, a, w)
                 }
@@ -614,7 +621,7 @@ fun MainScreen(
                 if (activeIndex < playbackQueue.size - 1) {
                     playFromQueue(activeIndex + 1)
                 } else {
-                    launchInfinity()
+                    launchInfinity(playImmediately = true)
                 }
             }
             else -> { // CYCLE
@@ -773,7 +780,7 @@ fun MainScreen(
                 if (nextIndex < playbackQueue.size - 1) nextIndex + 1 else -1
             QueueModes.INFINITY -> {
                 if (nextIndex < playbackQueue.size - 1) nextIndex + 1
-                else { launchInfinity(); -1 }
+                else { launchInfinity(playImmediately = true); -1 }
             }
             // CYCLE: 单曲队列不预载自身(避免 ExoPlayer [A,A] 闭环=假单曲循环)
             else -> if (playbackQueue.size > 1) {
@@ -912,21 +919,58 @@ fun MainScreen(
     }
 
     /**
-     * 心动模式：以红心歌单为种子开播，队尾用 intelligence/list 续推荐。
-     * 歌单 id 还没缓存时先按收藏顺序开播，id 到手再挂上续播，避免按钮点下去没反应。
+     * 心动模式：以红心歌单为种子开播，以 intelligence/list 智能推荐列表作为播放队列，
+     * 并在队尾持续请求心动推荐续播。
      */
     fun playLikedHeartbeat() {
         fmMode = false
         playMode = QueueModes.INFINITY
-        playLikedPlaylist()
+
+        val localSongs = LibraryManager.getSavedSongs(context)
+        val initialSeed = currentSong ?: localSongs.firstOrNull()
+
         coroutineScope.launch(Dispatchers.IO) {
-            val id = runCatching {
-                PlaylistApi.getLikedPlaylistId(PlaylistApi.getCurrentUserId())
-            }.getOrNull() ?: return@launch
+            val userId = PlaylistApi.getCurrentUserId()
+            val likedPid = runCatching { PlaylistApi.getLikedPlaylistId(userId) }.getOrNull()
+            val targetPid = likedPid ?: 0L
+
+            val seed = initialSeed ?: runCatching {
+                if (targetPid != 0L) PlaylistApi.getPlaylistDetail(targetPid).firstOrNull() else null
+            }.getOrNull()
+
+            if (seed == null) {
+                withContext(Dispatchers.Main) { playLikedPlaylist() }
+                return@launch
+            }
+
+            val intelligenceSongs = if (targetPid != 0L) {
+                runCatching {
+                    PlaylistApi.getIntelligenceList(
+                        songId = seed.id,
+                        playlistId = targetPid,
+                        startMusicId = seed.id
+                    )
+                }.getOrDefault(emptyList())
+            } else emptyList()
+
             withContext(Dispatchers.Main) {
-                heartbeatPlaylistId = id
+                heartbeatPlaylistId = if (targetPid != 0L) targetPid else null
                 playMode = QueueModes.INFINITY
                 fmMode = false
+
+                val queue = if (intelligenceSongs.isNotEmpty()) {
+                    val filtered = intelligenceSongs.filter { it.id != seed.id }
+                    listOf(seed) + filtered
+                } else {
+                    localSongs.ifEmpty { listOf(seed) }
+                }
+
+                playbackQueue.clear()
+                playbackQueue.addAll(queue)
+                currentQueueIndex = 0
+                if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
+                playFromQueue(0)
+                expandCard()
                 persistSession()
             }
         }

@@ -2,10 +2,6 @@ package com.takahashirinta.ncrust.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,6 +10,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import com.takahashirinta.ncrust.ui.i18n.LocalStrings
 import io.github.takahashirinta.kanesumi.controls.MetroDialog
 import io.github.takahashirinta.kanesumi.controls.MetroDivider
@@ -52,10 +49,10 @@ fun PlayAllDialog(
             verticalAlignment = Alignment.CenterVertically
         ) {
             MetroIcon(
-                imageVector = Icons.Default.PlayArrow,
+                imageVector = AppIcons.Play,
                 contentDescription = null,
                 tint = LocalMetroColors.current.primary,
-                sizeDp = 26.dp
+                sizeDp = 24.dp
             )
             Spacer(Modifier.width(16.dp))
             Column {
@@ -81,10 +78,10 @@ fun PlayAllDialog(
             verticalAlignment = Alignment.CenterVertically
         ) {
             MetroIcon(
-                imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                imageVector = AppIcons.Queue,
                 contentDescription = null,
                 tint = LocalMetroColors.current.onBackground,
-                sizeDp = 26.dp
+                sizeDp = 24.dp
             )
             Spacer(Modifier.width(16.dp))
             Column {
@@ -107,31 +104,31 @@ fun PlayAllDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onHeartbeat(); onDismiss() }
-                    .padding(horizontal = 20.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MetroIcon(
-                    imageVector = Icons.Default.Favorite,
-                    contentDescription = null,
-                    tint = LocalMetroColors.current.primary,
-                    sizeDp = 26.dp
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MetroIcon(
+                imageVector = AppIcons.Favorite,
+                contentDescription = null,
+                tint = LocalMetroColors.current.primary,
+                sizeDp = 24.dp
+            )
+            Spacer(Modifier.width(16.dp))
+            Column {
+                MetroText(
+                    text = strings.playModeHeartbeat,
+                    color = LocalMetroColors.current.onBackground,
+                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 )
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    MetroText(
-                        text = strings.playModeHeartbeat,
-                        color = LocalMetroColors.current.onBackground,
-                        style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    )
-                    MetroText(
-                        text = strings.heartbeatDesc,
-                        color = LocalMetroColors.current.onSurfaceVariant,
-                        style = TextStyle(fontSize = 12.sp)
-                    )
-                }
+                MetroText(
+                    text = strings.heartbeatDesc,
+                    color = LocalMetroColors.current.onSurfaceVariant,
+                    style = TextStyle(fontSize = 12.sp)
+                )
             }
-            MetroDivider()
         }
+        MetroDivider()
+    }
 
         Box(
             modifier = Modifier

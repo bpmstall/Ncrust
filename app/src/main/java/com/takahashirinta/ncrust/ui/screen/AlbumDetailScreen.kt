@@ -23,6 +23,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import com.takahashirinta.ncrust.cache.ContentCache
 import com.takahashirinta.ncrust.library.AlbumInfo
 import com.takahashirinta.ncrust.library.LibraryManager
@@ -179,14 +180,14 @@ fun AlbumDetailScreen(
                     onClick = { onSongClick(songItem) },
                     onShowMenu = {
                         onShowSongMenu(songItem, listOf(
-                            SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
+                            SongMenuAction(AppIcons.Add, strings.actionAddToLibrary) {
                                 LibraryManager.saveSong(context, songItem)
                                 Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
                             },
-                            SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
+                            SongMenuAction(AppIcons.Queue, strings.actionInsertNext) {
                                 onSongInsertNext(songItem)
                             },
-                            SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
+                            SongMenuAction(AppIcons.Queue, strings.actionAppendToQueue) {
                                 onSongAppendToQueue(songItem)
                             }
                         ))

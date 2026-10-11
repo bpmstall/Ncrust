@@ -344,7 +344,7 @@ object PlaylistApi {
     /**
      * 心动模式：以红心歌单为种子，按当前曲往下推荐（/api/playmode/intelligence/list）。
      * 官方客户端在「我喜欢的音乐」里用它替代普通顺序播放。
-     * 返回 data[].song 嵌套；空列表表示未登录、歌单不匹配或接口失效，调用方自行兜底。
+     * 网易云接口返回 data[].songInfo 嵌套（部分版本兼容 song 或纯 id）；空列表表示未登录、歌单不匹配或接口失效。
      */
     suspend fun getIntelligenceList(
         songId: Long,
@@ -359,16 +359,55 @@ object PlaylistApi {
             .put("startMusicId", startMusicId.toString())
             .put("count", count.toString())
             .toString()
-        val body = runCatching {
+        val weapiBody = runCatching {
             RetrofitClient.weapiPost("/api/playmode/intelligence/list", payload).body?.string()
-        }.getOrNull() ?: return@withContext emptyList()
-        val arr = runCatching { JSONObject(body).optJSONArray("data") }.getOrNull()
-            ?: return@withContext emptyList()
-        val songs = JSONArray()
-        for (i in 0 until arr.length()) {
-            arr.optJSONObject(i)?.optJSONObject("song")?.let { songs.put(it) }
+        }.getOrNull()
+        val body = if (weapiBody != null && runCatching { JSONObject(weapiBody).optInt("code", -1) == 200 }.getOrDefault(false)) {
+            weapiBody
+        } else {
+            runCatching {
+                RetrofitClient.eapiPost(
+                    "/eapi/playmode/intelligence/list",
+                    mapOf(
+                        "songId" to songId.toString(),
+                        "type" to "fromPlayOne",
+                        "playlistId" to playlistId.toString(),
+                        "startMusicId" to startMusicId.toString(),
+                        "count" to count.toString()
+                    )
+                ).body?.string()
+            }.getOrNull() ?: weapiBody
+        } ?: return@withContext emptyList()
+
+        val (directSongs, missingIds) = parseIntelligenceData(body)
+        if (directSongs.isNotEmpty()) {
+            return@withContext directSongs
         }
-        if (songs.length() == 0) emptyList() else parseSimilarSongs(JSONObject().put("songs", songs).toString())
+        if (missingIds.isNotEmpty()) {
+            return@withContext fetchSongDetails(missingIds)
+        }
+        emptyList()
+    }
+
+    internal fun parseIntelligenceData(body: String): Pair<List<SongItem>, List<Long>> {
+        val arr = runCatching { JSONObject(body).optJSONArray("data") }.getOrNull()
+            ?: return Pair(emptyList(), emptyList())
+        val songs = JSONArray()
+        val missingIds = mutableListOf<Long>()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val songObj = item.optJSONObject("songInfo")
+                ?: item.optJSONObject("song")
+                ?: item.takeIf { it.has("name") }
+            if (songObj != null) {
+                songs.put(songObj)
+            } else {
+                val id = item.optLong("id").takeIf { it != 0L }
+                if (id != null) missingIds.add(id)
+            }
+        }
+        val direct = if (songs.length() == 0) emptyList() else parseSimilarSongs(JSONObject().put("songs", songs).toString())
+        return Pair(direct, missingIds)
     }
 
     // FM垃圾桶：对当前 FM 歌曲执行不喜欢操作

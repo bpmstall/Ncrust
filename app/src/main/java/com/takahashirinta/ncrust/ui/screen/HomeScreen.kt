@@ -28,6 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import androidx.palette.graphics.Palette
 import coil.Coil
 import coil.compose.AsyncImage
@@ -41,7 +42,6 @@ import com.takahashirinta.ncrust.ui.BottomOverlayInsetDp
 import com.takahashirinta.ncrust.ui.ResponsiveContent
 import com.takahashirinta.ncrust.library.LibraryManager
 import com.takahashirinta.ncrust.library.PlayHistoryManager
-import com.takahashirinta.ncrust.ui.icons.AppIcons
 import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouTweens
 import io.github.takahashirinta.kanesumi.anim.sokuou.rememberMetroFlingBehavior
 import io.github.takahashirinta.kanesumi.controls.MetroIconButton
@@ -161,12 +161,12 @@ fun HomeScreen(
     }
 
     fun songMenu(song: SongItem): List<SongMenuAction> = listOf(
-        SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
+        SongMenuAction(AppIcons.Add, strings.actionAddToLibrary) {
             LibraryManager.saveSong(context, song)
             Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
         },
-        SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) { onSongInsertNext(song) },
-        SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) { onSongAppendToQueue(song) }
+        SongMenuAction(AppIcons.Queue, strings.actionInsertNext) { onSongInsertNext(song) },
+        SongMenuAction(AppIcons.Queue, strings.actionAppendToQueue) { onSongAppendToQueue(song) }
     )
 
     Crossfade(
@@ -218,7 +218,7 @@ fun HomeScreen(
                                     // 手动刷新每日推荐(#26):重新拉取并 diff 平滑替换
                                     MetroIconButton(onClick = { loadDailySongs() }) {
                                         MetroIcon(
-                                            Icons.Default.Refresh,
+                                            AppIcons.Refresh,
                                             contentDescription = strings.refreshLabel,
                                             tint = LocalMetroColors.current.onSurfaceVariant,
                                             sizeDp = 22.dp

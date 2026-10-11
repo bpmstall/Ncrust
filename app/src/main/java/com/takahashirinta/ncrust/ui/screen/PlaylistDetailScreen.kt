@@ -11,6 +11,7 @@ import com.takahashirinta.ncrust.cache.ContentCache
 import com.takahashirinta.ncrust.library.LibraryManager
 import com.takahashirinta.ncrust.network.PlaylistApi
 import com.takahashirinta.ncrust.network.SongItem
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import com.takahashirinta.ncrust.ui.components.DetailHeader
 import com.takahashirinta.ncrust.ui.components.DetailScaffold
 import com.takahashirinta.ncrust.ui.components.PlayAllDialog
@@ -99,14 +100,14 @@ fun PlaylistDetailScreen(
                     onClick = { onSongClick(song) },
                     onShowMenu = {
                         onShowSongMenu(song, listOf(
-                            SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
+                            SongMenuAction(AppIcons.Add, strings.actionAddToLibrary) {
                                 LibraryManager.saveSong(context, song)
                                 Toast.makeText(context, strings.addedToLibrary, Toast.LENGTH_SHORT).show()
                             },
-                            SongMenuAction(Icons.Default.PlaylistPlay, strings.actionInsertNext) {
+                            SongMenuAction(AppIcons.Queue, strings.actionInsertNext) {
                                 onSongInsertNext(song)
                             },
-                            SongMenuAction(Icons.Default.PlaylistAdd, strings.actionAppendToQueue) {
+                            SongMenuAction(AppIcons.Queue, strings.actionAppendToQueue) {
                                 onSongAppendToQueue(song)
                             }
                         ))
