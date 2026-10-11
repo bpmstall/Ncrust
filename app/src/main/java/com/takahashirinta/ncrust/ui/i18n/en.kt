@@ -43,7 +43,7 @@ val en = Strings(
 
     dailySongsTitle = "Daily Recommendations",
     recommendPlaylistTitle = "Recommended Playlists",
-    newSongsTitle = "New Releases",
+    newSongsTitle = "Jump Back In",
 
     refreshLabel = "Refresh",
     noMoreContent = "— No more content —",

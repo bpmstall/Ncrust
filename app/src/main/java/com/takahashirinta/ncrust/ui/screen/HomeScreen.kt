@@ -40,6 +40,8 @@ import com.takahashirinta.ncrust.network.CoverUrls
 import com.takahashirinta.ncrust.ui.BottomOverlayInsetDp
 import com.takahashirinta.ncrust.ui.ResponsiveContent
 import com.takahashirinta.ncrust.library.LibraryManager
+import com.takahashirinta.ncrust.library.PlayHistoryManager
+import com.takahashirinta.ncrust.ui.icons.AppIcons
 import io.github.takahashirinta.kanesumi.anim.sokuou.SokuouTweens
 import io.github.takahashirinta.kanesumi.anim.sokuou.rememberMetroFlingBehavior
 import io.github.takahashirinta.kanesumi.controls.MetroIconButton
@@ -58,9 +60,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.widget.Toast
 
-// 新歌速递容量：一次装够，不做分页。首页只是一瞥的展示位，
-// 不是深度浏览入口——用户想探索会去搜索/歌单。
-private const val NEW_SONGS_LIMIT = 20
+// 继续收听/常听容量
+private const val RECENT_SONGS_LIMIT = 20
 
 @Composable
 fun HomeScreen(
@@ -74,36 +75,39 @@ fun HomeScreen(
     onPlayFm: (() -> Unit)? = null
 ) {
     val strings = LocalStrings.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     // 初始 state 从 ContentCache 读取。有缓存则立即渲染，无需 spinner。
-    // 后台仍会刷新——请求返回后写回缓存 + 更新 state；LazyColumn 通过 key diff 平滑替换。
     var dailySongs by remember { mutableStateOf(ContentCache.homeDailySongs ?: emptyList()) }
     var playlists by remember { mutableStateOf(ContentCache.homeRecommendPlaylists ?: emptyList()) }
-    val newSongs = remember {
-        mutableStateListOf<SongItem>().apply { ContentCache.homeNewSongs?.let { addAll(it) } }
+
+    var recentSongs by remember { mutableStateOf(PlayHistoryManager.recent(context).take(RECENT_SONGS_LIMIT)) }
+    var savedSongs by remember {
+        mutableStateOf(
+            if (recentSongs.isEmpty()) LibraryManager.getSavedSongs(context).take(RECENT_SONGS_LIMIT)
+            else emptyList()
+        )
     }
-    // 冷启动（三块数据都空）才显示全屏 loader；有任一缓存则跳过。
+
+    // 冷启动（推荐均空）才显示全屏 loader；有任一缓存则跳过。
     var isLoading by remember {
-        mutableStateOf(dailySongs.isEmpty() && playlists.isEmpty() && newSongs.isEmpty())
+        mutableStateOf(dailySongs.isEmpty() && playlists.isEmpty())
     }
-    var error by remember { mutableStateOf<String?>(null) }
     val gridState = rememberLazyGridState()
-    // 宽屏：新歌从"整行列表"切到"自适应栅格单元"（Apple Music 式）；手机保持整行列表。
     val isWide = LocalConfiguration.current.screenWidthDp >= 600
     val coroutineScope = rememberCoroutineScope()
 
     // 私人 FM 电台卡需要登录用户资料: 昵称(卡标题"xx的电台") + 头像(取强调色做封面)。
     // 电台卡**常驻**——资料拿不到也照常显示(标题回退通用文案), 不再因此整卡消失。
     var fmProfile by remember { mutableStateOf(ContentCache.userProfile) }
-    // 头像主色调(Palette), 取不到就回退中性底色(不借用 Ncrust 主题色)
     var fmAccent by remember { mutableStateOf<Color?>(null) }
-    val fmContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         val profile = ContentCache.userProfile
             ?: runCatching { PlaylistApi.getUserProfile() }.getOrNull()
         if (profile != null && profile.userId > 0) {
             fmProfile = profile
             ContentCache.userProfile = profile
-            val accent = runCatching { extractAvatarAccent(fmContext, profile.avatarUrl) }.getOrNull()
+            val accent = runCatching { extractAvatarAccent(context, profile.avatarUrl) }.getOrNull()
             if (accent != null) fmAccent = accent
         }
     }
@@ -115,9 +119,13 @@ fun HomeScreen(
                 withContext(Dispatchers.Main) {
                     dailySongs = list
                     ContentCache.homeDailySongs = list
+                    isLoading = false
                 }
             } catch (e: Exception) {
                 android.util.Log.e("DailySongs", "Error", e)
+                withContext(Dispatchers.Main) {
+                    isLoading = false
+                }
             }
         }
     }
@@ -129,26 +137,10 @@ fun HomeScreen(
                 withContext(Dispatchers.Main) {
                     playlists = list
                     ContentCache.homeRecommendPlaylists = list
-                }
-            } catch (_: Exception) { }
-        }
-    }
-
-    fun loadNewSongs() {
-        coroutineScope.launch(Dispatchers.IO) {
-            if (newSongs.isEmpty()) isLoading = true
-            error = null
-            try {
-                val list = PlaylistApi.getTopSongs(limit = NEW_SONGS_LIMIT, offset = 0)
-                withContext(Dispatchers.Main) {
-                    newSongs.clear()
-                    newSongs.addAll(list)
-                    ContentCache.homeNewSongs = list.toList()
                     isLoading = false
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 withContext(Dispatchers.Main) {
-                    error = strings.loadFailed(e.message)
                     isLoading = false
                 }
             }
@@ -156,14 +148,17 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        // AppWarmup 刚预取过同样三个接口时直接复用缓存，避免冷启动重复网络/耗电。
-        if (ContentCache.isHomeFresh()) return@LaunchedEffect
+        recentSongs = PlayHistoryManager.recent(context).take(RECENT_SONGS_LIMIT)
+        if (recentSongs.isEmpty()) {
+            savedSongs = LibraryManager.getSavedSongs(context).take(RECENT_SONGS_LIMIT)
+        }
+        if (ContentCache.isHomeFresh()) {
+            isLoading = false
+            return@LaunchedEffect
+        }
         loadDailySongs()
         loadPlaylists()
-        loadNewSongs()
     }
-
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     fun songMenu(song: SongItem): List<SongMenuAction> = listOf(
         SongMenuAction(Icons.Default.LibraryAdd, strings.actionAddToLibrary) {
@@ -285,28 +280,50 @@ fun HomeScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(16.dp)) }
                     }
 
-                    // 新歌：宽屏自适应栅格（多列方封面），手机保持整行列表。
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        SectionHeader(title = strings.newSongsTitle)
-                    }
-                    item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(6.dp)) }
-                    items(
-                        items = newSongs,
-                        key = { it.id },
-                        span = { if (isWide) GridItemSpan(1) else GridItemSpan(maxLineSpan) }
-                    ) { song ->
-                        if (isWide) {
-                            SongGridTile(
-                                song = song,
-                                onClick = { onSongClick(song) },
-                                onLongClick = { onShowSongMenu(song, songMenu(song)) }
+                    // 继续收听（优先最近播放，无历史回退收藏常听）：宽屏自适应栅格，手机保持整行列表
+                    val displaySongs = if (recentSongs.isNotEmpty()) recentSongs else savedSongs
+                    if (displaySongs.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(
+                                title = if (recentSongs.isNotEmpty()) strings.newSongsTitle else strings.categoryTracks,
+                                onPlayAll = { onPlayDailyAll?.invoke(displaySongs) }
                             )
-                        } else {
-                            SongCard(
-                                song = song,
-                                style = SongCardStyle.LIST,
-                                onClick = { onSongClick(song) },
-                                onShowMenu = { onShowSongMenu(song, songMenu(song)) }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(6.dp)) }
+                        items(
+                            items = displaySongs,
+                            key = { it.id },
+                            span = { if (isWide) GridItemSpan(1) else GridItemSpan(maxLineSpan) }
+                        ) { song ->
+                            if (isWide) {
+                                SongGridTile(
+                                    song = song,
+                                    onClick = { onSongClick(song) },
+                                    onLongClick = { onShowSongMenu(song, songMenu(song)) }
+                                )
+                            } else {
+                                SongCard(
+                                    song = song,
+                                    style = SongCardStyle.LIST,
+                                    onClick = { onSongClick(song) },
+                                    onShowMenu = { onShowSongMenu(song, songMenu(song)) }
+                                )
+                            }
+                        }
+                    } else if (playlists.size > 4) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(title = strings.recommendPlaylistTitle)
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(6.dp)) }
+                        items(
+                            items = playlists.drop(3),
+                            key = { it.id },
+                            span = { GridItemSpan(1) }
+                        ) { pl ->
+                            PlaylistTile(
+                                playlist = pl,
+                                onClick = { onPlaylistClick(pl.id) },
+                                onPlayAll = { onPlayPlaylist(pl.id) }
                             )
                         }
                     }
@@ -337,10 +354,10 @@ private fun SectionHeader(
         if (onPlayAll != null) {
             MetroIconButton(onClick = onPlayAll) {
                 MetroIcon(
-                    Icons.Default.PlayArrow,
+                    AppIcons.Play,
                     contentDescription = LocalStrings.current.playAllButton,
                     tint = LocalMetroColors.current.primary,
-                    sizeDp = 28.dp,
+                    sizeDp = 24.dp,
                 )
             }
         }

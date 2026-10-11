@@ -43,7 +43,7 @@ val jpJP = Strings(
 
     dailySongsTitle = "おすすめ今日の曲",
     recommendPlaylistTitle = "おすすめプレイリスト",
-    newSongsTitle = "新着曲",
+    newSongsTitle = "もう一度聴く",
 
     refreshLabel = "更新",
     noMoreContent = "— これ以上ありません —",

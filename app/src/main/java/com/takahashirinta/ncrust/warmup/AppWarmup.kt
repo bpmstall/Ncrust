@@ -74,7 +74,7 @@ object AppWarmup {
 
         scope.launch {
             withTimeoutOrNull(TIMEOUT_MS) {
-                // 阶段一：三条 Home 请求并发写入 ContentCache
+                // 阶段一：Home 请求并发写入 ContentCache
                 coroutineScope {
                     val dailyDeferred = async {
                         runCatching { PlaylistApi.getDailyRecommendSongs() }.getOrNull()
@@ -82,14 +82,8 @@ object AppWarmup {
                     val plsDeferred = async {
                         runCatching { PlaylistApi.getRecommendPlaylists() }.getOrNull()
                     }
-                    val topDeferred = async {
-                        // limit 与 HomeScreen NEW_SONGS_LIMIT 对齐——warmup 一次装够，
-                        // 不留"缓存 10 条 → 刷新变 20 条"的可见 diff
-                        runCatching { PlaylistApi.getTopSongs(limit = 20, offset = 0) }.getOrNull()
-                    }
                     dailyDeferred.await()?.let { ContentCache.homeDailySongs = it }
                     plsDeferred.await()?.let { ContentCache.homeRecommendPlaylists = it }
-                    topDeferred.await()?.let { ContentCache.homeNewSongs = it }
                 }
                 // 标记首页数据已预热：HomeScreen 进屏时据此跳过重复请求。
                 ContentCache.markHomeWarmed()
@@ -105,9 +99,6 @@ object AppWarmup {
                     }
                     ContentCache.homeRecommendPlaylists?.take(PREFETCH_PER_SECTION)?.forEach {
                         it.coverUrl.takeIf(String::isNotBlank)?.let(::add)
-                    }
-                    ContentCache.homeNewSongs?.take(PREFETCH_PER_SECTION)?.forEach {
-                        it.album?.picUrl?.takeIf(String::isNotBlank)?.let(::add)
                     }
                 }.distinct().mapNotNull { CoverUrls.small(it) }
 

@@ -43,7 +43,7 @@ val zhCN = Strings(
 
     dailySongsTitle = "每日推荐",
     recommendPlaylistTitle = "推荐歌单",
-    newSongsTitle = "新歌速递",
+    newSongsTitle = "继续收听",
 
     refreshLabel = "刷新",
     noMoreContent = "— 没有更多了 —",

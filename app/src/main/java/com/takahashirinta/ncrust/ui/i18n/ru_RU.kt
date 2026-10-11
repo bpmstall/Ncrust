@@ -43,7 +43,7 @@ val ruRU = Strings(
 
     dailySongsTitle = "Ежедневные рекомендации",
     recommendPlaylistTitle = "Рекомендуемые плейлисты",
-    newSongsTitle = "Новые релизы",
+    newSongsTitle = "Слушать снова",
 
     refreshLabel = "Обновить",
     noMoreContent = "— Больше ничего нет —",

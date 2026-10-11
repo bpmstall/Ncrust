@@ -43,7 +43,7 @@ val deDE = Strings(
 
     dailySongsTitle = "Tägliche Empfehlungen",
     recommendPlaylistTitle = "Empfohlene Playlists",
-    newSongsTitle = "Neue Veröffentlichungen",
+    newSongsTitle = "Weiterspielen",
 
     refreshLabel = "Aktualisieren",
     noMoreContent = "— Keine weiteren Inhalte —",

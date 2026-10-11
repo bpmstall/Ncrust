@@ -23,7 +23,6 @@ object ContentCache {
     // ── 首页 ─────────────────────────────────────────────────────────
     @Volatile var homeDailySongs: List<SongItem>? = null
     @Volatile var homeRecommendPlaylists: List<PlaylistApi.PlaylistCard>? = null
-    @Volatile var homeNewSongs: List<SongItem>? = null
 
     // 首页数据最近一次被 AppWarmup 预取的时间戳。HomeScreen 据此判断"刚预热过",
     // 避免冷启动时 warmup 与 Home 各拉一遍同样的三个接口(重复网络/耗电)。
@@ -58,7 +57,6 @@ object ContentCache {
     fun clearAll() {
         homeDailySongs = null
         homeRecommendPlaylists = null
-        homeNewSongs = null
         albumCache.evictAll()
         playlistCache.evictAll()
         artistCache.evictAll()
