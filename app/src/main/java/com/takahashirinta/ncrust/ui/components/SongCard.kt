@@ -2,10 +2,12 @@ package com.takahashirinta.ncrust.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.*
@@ -63,16 +65,34 @@ fun SongCard(
                 else -> 72.dp
             }
 
-            // 无边框版式：封面贴屏幕左沿（无左 padding），文字与右侧 actions 保留 16dp 右 padding。
-            // 长按触发菜单；右侧 MoreVert 按钮取消，避免与"无边框"视觉冲突。
+            // Windows 11 Fluent Design：卡片 8dp 小圆角 + 0.75dp 半透明微边框描边 + 轻盈层次
             Row(
                 modifier = modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .then(
+                        if (isCurrentPlaying) {
+                            Modifier
+                                .background(LocalMetroColors.current.primary.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+                                .border(
+                                    width = 0.75.dp,
+                                    color = LocalMetroColors.current.primary.copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                        } else {
+                            Modifier.border(
+                                width = 0.75.dp,
+                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    )
                     .combinedClickable(
                         onClick = onClick,
                         onLongClick = { onShowMenu?.invoke() }
                     )
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 4.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showCover) {
@@ -81,12 +101,19 @@ fun SongCard(
                         contentDescription = strings.coverDesc,
                         // 纯色占位:避免低端机解码完成前出现"空方块"闪变(Metro 不做 crossfade,直接落图)
                         placeholder = ColorPainter(LocalMetroColors.current.surfaceVariant),
-                        modifier = Modifier.size(actualCoverSize),
+                        modifier = Modifier
+                            .size(actualCoverSize)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(
+                                width = 0.75.dp,
+                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(6.dp)
+                            ),
                         contentScale = ContentScale.Crop
                     )
-                    Spacer(Modifier.width(14.dp))
+                    Spacer(Modifier.width(12.dp))
                 } else {
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(12.dp))
                 }
 
                 Column(Modifier.weight(1f)) {
@@ -115,7 +142,7 @@ fun SongCard(
                         actions.invoke(this)
                     }
                 }
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(8.dp))
             }
         }
 
@@ -126,6 +153,13 @@ fun SongCard(
             val scaleScope = rememberCoroutineScope()
             Column(
                 modifier = modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(
+                        width = 0.75.dp,
+                        color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .background(LocalMetroColors.current.surfaceVariant.copy(alpha = 0.35f))
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -142,6 +176,7 @@ fun SongCard(
                         scaleX = s
                         scaleY = s
                     }
+                    .padding(8.dp)
             ) {
                 AsyncImage(
                     model = CoverUrls.small(song.album?.picUrl),
@@ -149,7 +184,13 @@ fun SongCard(
                     placeholder = ColorPainter(LocalMetroColors.current.surfaceVariant),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f),
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .border(
+                            width = 0.75.dp,
+                            color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                            shape = RoundedCornerShape(6.dp)
+                        ),
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.height(8.dp))
@@ -179,13 +220,17 @@ fun PlayAllButton(
     size: Dp = 36.dp,
     onClick: () -> Unit
 ) {
-    // 圆形外框(用户决策): 直径 = 原边长。clip 先于 background, 裁切不产生
-    // 额外合成层, 与方形按钮同价。
+    // 圆形外框(用户决策): 直径 = 原边长。clip 先于 background, 裁切不产生额外合成层
     Box(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
             .background(LocalMetroColors.current.primary)
+            .border(
+                width = 0.75.dp,
+                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                shape = CircleShape
+            )
             .combinedClickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

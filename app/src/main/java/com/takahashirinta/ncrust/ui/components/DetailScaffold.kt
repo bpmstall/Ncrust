@@ -13,17 +13,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -290,7 +293,13 @@ private fun DetailScaffoldImpl(
                                 Spacer(Modifier.height(16.dp))
                                 Box(
                                     modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(LocalMetroColors.current.primary)
+                                        .border(
+                                            0.75.dp,
+                                            LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                                            RoundedCornerShape(6.dp)
+                                        )
                                         .clickable(
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
@@ -526,7 +535,14 @@ fun DetailHeader(
                 model = CoverUrls.large(coverUrl),
                 contentDescription = strings.coverDesc,
                 placeholder = androidx.compose.ui.graphics.painter.ColorPainter(LocalMetroColors.current.surfaceVariant),
-                modifier = Modifier.size(220.dp),
+                modifier = Modifier
+                    .size(220.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(
+                        0.75.dp,
+                        LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                        RoundedCornerShape(8.dp)
+                    ),
                 contentScale = ContentScale.Crop
             )
             Spacer(Modifier.width(24.dp))
