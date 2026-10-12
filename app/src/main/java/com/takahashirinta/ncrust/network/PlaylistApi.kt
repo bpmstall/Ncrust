@@ -762,9 +762,11 @@ object PlaylistApi {
         val response = RetrofitClient.eapiPost("/eapi/album/sublist", payload)
         val body = response.body?.string() ?: throw Exception("empty response")
         val json = JSONObject(body)
+        val dataArr = json.optJSONArray("data")
+        val dataObj = json.optJSONObject("data")
         val arr: JSONArray = when {
-            json.optJSONArray("data") != null -> json.optJSONArray("data")
-            json.optJSONObject("data") != null -> json.optJSONObject("data").optJSONArray("albums")
+            dataArr != null -> dataArr
+            dataObj != null -> dataObj.optJSONArray("albums") ?: return@withContext emptyList()
             else -> return@withContext emptyList()
         }
         (0 until arr.length()).map { i ->
@@ -789,5 +791,150 @@ object PlaylistApi {
         val response = RetrofitClient.eapiPost("/eapi/album/$action", payload)
         val body = response.body?.string() ?: return@withContext false
         JSONObject(body).optInt("code", -1) == 200
+    }
+
+    // ==================== 歌单编辑与歌曲增删 ====================
+
+    enum class TrackOpResult {
+        SUCCESS,
+        ALREADY_EXISTS,
+        FAILED
+    }
+
+    /**
+     * 将歌曲添加至自建歌单（/api/playlist/manipulate/tracks）。
+     * code 200 表示添加成功，code 502 通常为歌曲已在歌单中。
+     */
+    suspend fun addSongToPlaylist(playlistId: Long, songId: Long): TrackOpResult = withContext(Dispatchers.IO) {
+        try {
+            val trackIdsJson = "[$songId]"
+            val payload = JSONObject()
+                .put("op", "add")
+                .put("pid", playlistId.toString())
+                .put("trackIds", trackIdsJson)
+                .put("tracks", trackIdsJson)
+                .put("immersive", "true")
+                .toString()
+            val response = RetrofitClient.weapiPost("/api/playlist/manipulate/tracks", payload)
+            val body = response.body?.string() ?: return@withContext TrackOpResult.FAILED
+            val json = JSONObject(body)
+            val code = json.optInt("code", -1)
+            when (code) {
+                200 -> TrackOpResult.SUCCESS
+                502 -> TrackOpResult.ALREADY_EXISTS
+                else -> {
+                    // 回退尝试 eapi
+                    val eapiResp = RetrofitClient.eapiPost(
+                        "/eapi/playlist/manipulate/tracks",
+                        mapOf(
+                            "op" to "add",
+                            "pid" to playlistId.toString(),
+                            "trackIds" to trackIdsJson
+                        )
+                    )
+                    val eapiBody = eapiResp.body?.string() ?: return@withContext TrackOpResult.FAILED
+                    val eapiCode = JSONObject(eapiBody).optInt("code", -1)
+                    if (eapiCode == 200) TrackOpResult.SUCCESS
+                    else if (eapiCode == 502) TrackOpResult.ALREADY_EXISTS
+                    else TrackOpResult.FAILED
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("PlaylistApi", "addSongToPlaylist failed: ${e.message}", e)
+            TrackOpResult.FAILED
+        }
+    }
+
+    /**
+     * 从歌单中移除歌曲（/api/playlist/manipulate/tracks, op="del"）。
+     */
+    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val trackIdsJson = "[$songId]"
+            val payload = JSONObject()
+                .put("op", "del")
+                .put("pid", playlistId.toString())
+                .put("trackIds", trackIdsJson)
+                .put("tracks", trackIdsJson)
+                .toString()
+            val response = RetrofitClient.weapiPost("/api/playlist/manipulate/tracks", payload)
+            val body = response.body?.string() ?: return@withContext false
+            val code = JSONObject(body).optInt("code", -1)
+            if (code == 200) return@withContext true
+
+            // 回退尝试 eapi
+            val eapiResp = RetrofitClient.eapiPost(
+                "/eapi/playlist/manipulate/tracks",
+                mapOf(
+                    "op" to "del",
+                    "pid" to playlistId.toString(),
+                    "trackIds" to trackIdsJson
+                )
+            )
+            val eapiBody = eapiResp.body?.string() ?: return@withContext false
+            JSONObject(eapiBody).optInt("code", -1) == 200
+        } catch (e: Exception) {
+            Log.e("PlaylistApi", "removeSongFromPlaylist failed: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * 编辑歌单信息（名称与描述）。
+     */
+    suspend fun updatePlaylistInfo(playlistId: Long, name: String, desc: String = ""): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject()
+                .put("id", playlistId)
+                .put("name", name)
+                .put("desc", desc)
+                .put("tags", "")
+                .toString()
+            val response = RetrofitClient.weapiPost("/api/playlist/update", payload)
+            val body = response.body?.string() ?: return@withContext false
+            val code = JSONObject(body).optInt("code", -1)
+            if (code == 200) return@withContext true
+
+            // 回退分步更新 /api/playlist/desc/update 与 /api/playlist/update/name
+            val namePayload = JSONObject().put("id", playlistId).put("name", name).toString()
+            val nameResp = RetrofitClient.weapiPost("/api/playlist/update/name", namePayload)
+            val nameOk = runCatching { JSONObject(nameResp.body?.string().orEmpty()).optInt("code", -1) == 200 }.getOrDefault(false)
+
+            if (desc.isNotEmpty()) {
+                val descPayload = JSONObject().put("id", playlistId).put("desc", desc).toString()
+                RetrofitClient.weapiPost("/api/playlist/desc/update", descPayload)
+            }
+            nameOk
+        } catch (e: Exception) {
+            Log.e("PlaylistApi", "updatePlaylistInfo failed: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * 创建新歌单（/api/playlist/create）。
+     */
+    suspend fun createPlaylist(name: String, privacy: Int = 0): Long? = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject()
+                .put("name", name)
+                .put("privacy", privacy)
+                .put("type", "NORMAL")
+                .toString()
+            val response = RetrofitClient.weapiPost("/api/playlist/create", payload)
+            val body = response.body?.string() ?: return@withContext null
+            val json = JSONObject(body)
+            if (json.optInt("code", -1) == 200) {
+                val id = json.optLong("id", 0L)
+                if (id != 0L) return@withContext id
+                val plObj = json.optJSONObject("playlist")
+                val plId = plObj?.optLong("id", 0L) ?: 0L
+                if (plId != 0L) return@withContext plId
+            }
+            null
+        } catch (e: Exception) {
+            Log.e("PlaylistApi", "createPlaylist failed: ${e.message}", e)
+            null
+        }
     }
 }

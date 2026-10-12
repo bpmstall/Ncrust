@@ -206,4 +206,20 @@ val zhCN = Strings(
 
     actionShare = "分享",
     shareChooserTitle = "分享到",
+
+    actionAddToUserPlaylist = "添加到歌单",
+    actionRemoveFromPlaylist = "从歌单中移除",
+    editPlaylistTitle = "编辑歌单",
+    editPlaylistNameLabel = "歌单名称",
+    editPlaylistDescLabel = "歌单描述",
+    createNewPlaylist = "新建歌单",
+    newPlaylistNamePlaceholder = "请输入新歌单名称",
+    addToPlaylistSuccess = { "已添加到歌单 $it" },
+    songAlreadyInPlaylist = "歌曲已在歌单中",
+    removeFromPlaylistSuccess = "已从歌单中移除",
+    removeFromPlaylistConfirm = "确定从歌单中移除这首歌吗？",
+    editPlaylistSuccess = "歌单信息已更新",
+    saveText = "保存",
+    cancelText = "取消",
+    confirmText = "确定",
 )

@@ -239,6 +239,23 @@ data class Strings(
     // Sharing
     val actionShare: String,
     val shareChooserTitle: String,
+
+    // Playlist Edit & Song Management
+    val actionAddToUserPlaylist: String = "添加到歌单",
+    val actionRemoveFromPlaylist: String = "从歌单中移除",
+    val editPlaylistTitle: String = "编辑歌单",
+    val editPlaylistNameLabel: String = "歌单名称",
+    val editPlaylistDescLabel: String = "歌单描述",
+    val createNewPlaylist: String = "新建歌单",
+    val newPlaylistNamePlaceholder: String = "请输入新歌单名称",
+    val addToPlaylistSuccess: (String) -> String = { "已添加到歌单 $it" },
+    val songAlreadyInPlaylist: String = "歌曲已在歌单中",
+    val removeFromPlaylistSuccess: String = "已从歌单中移除",
+    val removeFromPlaylistConfirm: String = "确定从歌单中移除这首歌吗？",
+    val editPlaylistSuccess: String = "歌单信息已更新",
+    val saveText: String = "保存",
+    val cancelText: String = "取消",
+    val confirmText: String = "确定",
 )
 
 /** 字节数格式化为人类可读的 B/KB/MB/GB，供 cacheSizeLabel 复用。 */

@@ -25,6 +25,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
@@ -66,6 +67,7 @@ import io.github.takahashirinta.kanesumi.structure.bottomnav.MetroBottomNav
 import io.github.takahashirinta.kanesumi.structure.bottomnav.MetroBottomNavItem
 import io.github.takahashirinta.kanesumi.structure.sidebar.MetroSidebar
 import io.github.takahashirinta.kanesumi.structure.sidebar.MetroSidebarItem
+import com.takahashirinta.ncrust.ui.components.AddToPlaylistSheet
 import com.takahashirinta.ncrust.ui.components.SongMenuAction
 import com.takahashirinta.ncrust.ui.components.SongMenuSheet
 import com.takahashirinta.ncrust.ui.components.TopScrimIconButton
@@ -366,6 +368,7 @@ fun MainScreen(
 
     var menuSong by remember { mutableStateOf<SongItem?>(null) }
     var menuSongActions by remember { mutableStateOf<List<SongMenuAction>>(emptyList()) }
+    var addToPlaylistSong by remember { mutableStateOf<SongItem?>(null) }
 
     // SnapshotStateList：追加/删除只通知增量，不换整个列表引用。
     // 旧的 playbackQueue = playbackQueue + x 每次都复制整表并让 PlayerCard 整卡重组。
@@ -1571,6 +1574,9 @@ fun MainScreen(
                     // 统一在这里追加"分享/转到歌手/转到专辑": 所有长按菜单(首页/歌单/
                     // 专辑/歌手/收藏/搜索)与全屏播放器点歌名自动获得入口, 各 Screen 无需感知。
                     actions = menuSongActions + listOf(
+                        SongMenuAction(Icons.AutoMirrored.Filled.PlaylistAdd, menuStrings.actionAddToUserPlaylist) {
+                            addToPlaylistSong = song
+                        },
                         SongMenuAction(Icons.Default.Share, menuStrings.actionShare) {
                             shareSong(song, menuStrings.shareChooserTitle)
                         },
@@ -1584,6 +1590,13 @@ fun MainScreen(
                     onDismiss = { menuSong = null }
                 )
             }
+        }
+
+        addToPlaylistSong?.let { song ->
+            AddToPlaylistSheet(
+                song = song,
+                onDismiss = { addToPlaylistSong = null }
+            )
         }
 
         }

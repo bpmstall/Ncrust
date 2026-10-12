@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
@@ -76,6 +77,7 @@ object AppIcons {
     val Delete = Icons.Rounded.Delete
     val Favorite = Icons.Rounded.Favorite
     val DragHandle = Icons.Rounded.DragHandle
+    val Edit = Icons.Rounded.Edit
     val Sync = Icons.Rounded.Sync
 
     // 设置项现代分类图标

@@ -205,4 +205,20 @@ val en = Strings(
 
     actionShare = "Share",
     shareChooserTitle = "Share to",
+
+    actionAddToUserPlaylist = "Add to playlist",
+    actionRemoveFromPlaylist = "Remove from playlist",
+    editPlaylistTitle = "Edit playlist",
+    editPlaylistNameLabel = "Playlist title",
+    editPlaylistDescLabel = "Description",
+    createNewPlaylist = "New playlist",
+    newPlaylistNamePlaceholder = "Enter playlist name",
+    addToPlaylistSuccess = { "Added to playlist $it" },
+    songAlreadyInPlaylist = "Song is already in playlist",
+    removeFromPlaylistSuccess = "Removed from playlist",
+    removeFromPlaylistConfirm = "Remove this song from playlist?",
+    editPlaylistSuccess = "Playlist updated",
+    saveText = "Save",
+    cancelText = "Cancel",
+    confirmText = "Confirm",
 )

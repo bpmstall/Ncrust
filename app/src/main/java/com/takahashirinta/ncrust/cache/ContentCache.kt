@@ -46,12 +46,14 @@ object ContentCache {
 
     fun getPlaylistSongs(id: Long): List<SongItem>? = playlistCache[id]
     fun putPlaylistSongs(id: Long, data: List<SongItem>) { playlistCache.put(id, data) }
+    fun evictPlaylist(id: Long) { playlistCache.remove(id) }
 
     fun getArtistAlbums(id: Long): ArtistAlbumsResponse? = artistCache[id]
     fun putArtistAlbums(id: Long, data: ArtistAlbumsResponse) { artistCache.put(id, data) }
 
     // ── 用户 ─────────────────────────────────────────────────────────
     @Volatile var userProfile: PlaylistApi.UserProfile? = null
+    @Volatile var userPlaylists: List<PlaylistApi.PlaylistInfo>? = null
 
     // 清空所有缓存（切换账号 / 内存压力 / 进程重启场景）。
     fun clearAll() {
@@ -61,5 +63,6 @@ object ContentCache {
         playlistCache.evictAll()
         artistCache.evictAll()
         userProfile = null
+        userPlaylists = null
     }
 }
