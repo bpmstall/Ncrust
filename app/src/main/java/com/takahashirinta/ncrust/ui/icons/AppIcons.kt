@@ -12,6 +12,9 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AllInclusive
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ColorLens
@@ -25,12 +28,14 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
@@ -79,6 +84,11 @@ object AppIcons {
     val DragHandle = Icons.Rounded.DragHandle
     val Edit = Icons.Rounded.Edit
     val Sync = Icons.Rounded.Sync
+    val MoreVert = Icons.Rounded.MoreVert
+    val Checklist = Icons.Rounded.Checklist
+    val SelectAll = Icons.Rounded.SelectAll
+    val CheckBox = Icons.Rounded.CheckBox
+    val CheckBoxOutlineBlank = Icons.Rounded.CheckBoxOutlineBlank
 
     // 设置项现代分类图标
     val AudioQuality = Icons.Rounded.GraphicEq

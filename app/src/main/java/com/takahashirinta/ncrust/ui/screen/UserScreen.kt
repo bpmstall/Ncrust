@@ -115,8 +115,6 @@ fun UserScreen(
     val playerViewModel: PlayerViewModel = viewModel()
     var wifiQuality by remember { mutableIntStateOf(prefs.getInt("wifi_quality", 3)) }
     var mobileQuality by remember { mutableIntStateOf(prefs.getInt("mobile_quality", 1)) }
-    var hyperosIslandEnabled by remember { mutableStateOf(prefs.getBoolean("hyperos_island_enabled", true)) }
-    var predictiveBackLyrics by remember { mutableStateOf(prefs.getBoolean("predictive_back_lyrics", true)) }
     var lowPowerMode by remember { mutableStateOf(prefs.getBoolean("low_power_mode", false)) }
     var gaplessEnabled by remember { mutableStateOf(prefs.getBoolean("gapless_playback", true)) }
     var lyricsTranslation by remember { mutableStateOf(prefs.getBoolean("lyrics_translation", true)) }
@@ -305,16 +303,6 @@ fun UserScreen(
             SectionHeader(AppIcons.Playback, strings.playbackSectionTitle)
             SettingsCard {
                 SettingSwitchRow(
-                    title = strings.hyperosIslandTitle,
-                    description = strings.hyperosIslandDesc,
-                    checked = hyperosIslandEnabled,
-                    onCheckedChange = {
-                        hyperosIslandEnabled = it
-                        prefs.edit().putBoolean("hyperos_island_enabled", it).apply()
-                    }
-                )
-                CardDivider()
-                SettingSwitchRow(
                     title = strings.gaplessSectionTitle,
                     description = strings.gaplessDescription,
                     checked = gaplessEnabled,
@@ -322,16 +310,6 @@ fun UserScreen(
                         gaplessEnabled = it
                         prefs.edit().putBoolean("gapless_playback", it).apply()
                         playerViewModel.refreshGaplessSetting()
-                    }
-                )
-                CardDivider()
-                SettingSwitchRow(
-                    title = strings.predictiveBackLyricsTitle,
-                    description = strings.predictiveBackLyricsDesc,
-                    checked = predictiveBackLyrics,
-                    onCheckedChange = {
-                        predictiveBackLyrics = it
-                        prefs.edit().putBoolean("predictive_back_lyrics", it).apply()
                     }
                 )
             }

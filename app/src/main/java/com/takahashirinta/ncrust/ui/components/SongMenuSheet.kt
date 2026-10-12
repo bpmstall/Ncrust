@@ -25,6 +25,7 @@ import io.github.takahashirinta.kanesumi.core.theme.MetroText
 data class SongMenuAction(
     val icon: ImageVector,
     val label: String,
+    val isDestructive: Boolean = false,
     val onClick: () -> Unit
 )
 
@@ -93,6 +94,11 @@ fun SongMenuSheet(
 
         // 可扩展操作列表
         actions.forEach { action ->
+            val contentColor = if (action.isDestructive) {
+                Color(0xFFE53935)
+            } else {
+                LocalMetroColors.current.onBackground
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -106,13 +112,13 @@ fun SongMenuSheet(
                 MetroIcon(
                     imageVector = action.icon,
                     contentDescription = null,
-                    tint = LocalMetroColors.current.onBackground,
+                    tint = contentColor,
                     sizeDp = 24.dp
                 )
                 Spacer(Modifier.width(16.dp))
                 MetroText(
                     action.label,
-                    color = LocalMetroColors.current.onBackground,
+                    color = contentColor,
                     style = LocalMetroTypography.current.bodyLarge
                 )
             }

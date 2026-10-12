@@ -779,19 +779,6 @@ class PlaybackService : MediaLibraryService() {
             builder.setLargeIcon(currentArtworkBitmap)
         }
 
-        // 小米 HyperOS 灵动岛 / 焦点通知适配
-        val prefs = getSharedPreferences("ncrust_settings", MODE_PRIVATE)
-        if (prefs.getBoolean("hyperos_island_enabled", true)) {
-            builder.setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-            builder.extras.apply {
-                putBoolean("miui.focusNotice", true)
-                putString("miui.focusNotice", "true")
-                putInt("miui.focusType", 1)
-                putString("miui.focusTitle", mediaTitle)
-                putString("miui.focusText", mediaArtist)
-            }
-        }
-
         return builder.build()
     }
 

@@ -802,12 +802,13 @@ object PlaylistApi {
     }
 
     /**
-     * 将歌曲添加至自建歌单（/api/playlist/manipulate/tracks）。
+     * 批量将歌曲添加至自建歌单（/api/playlist/manipulate/tracks）。
      * code 200 表示添加成功，code 502 通常为歌曲已在歌单中。
      */
-    suspend fun addSongToPlaylist(playlistId: Long, songId: Long): TrackOpResult = withContext(Dispatchers.IO) {
+    suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): TrackOpResult = withContext(Dispatchers.IO) {
+        if (songIds.isEmpty()) return@withContext TrackOpResult.SUCCESS
         try {
-            val trackIdsJson = "[$songId]"
+            val trackIdsJson = "[${songIds.joinToString(",")}]"
             val payload = JSONObject()
                 .put("op", "add")
                 .put("pid", playlistId.toString())
@@ -840,17 +841,21 @@ object PlaylistApi {
                 }
             }
         } catch (e: Exception) {
-            Log.e("PlaylistApi", "addSongToPlaylist failed: ${e.message}", e)
+            Log.e("PlaylistApi", "addSongsToPlaylist failed: ${e.message}", e)
             TrackOpResult.FAILED
         }
     }
 
+    suspend fun addSongToPlaylist(playlistId: Long, songId: Long): TrackOpResult =
+        addSongsToPlaylist(playlistId, listOf(songId))
+
     /**
-     * 从歌单中移除歌曲（/api/playlist/manipulate/tracks, op="del"）。
+     * 批量从歌单中移除歌曲（/api/playlist/manipulate/tracks, op="del"）。
      */
-    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long): Boolean = withContext(Dispatchers.IO) {
+    suspend fun removeSongsFromPlaylist(playlistId: Long, songIds: List<Long>): Boolean = withContext(Dispatchers.IO) {
+        if (songIds.isEmpty()) return@withContext true
         try {
-            val trackIdsJson = "[$songId]"
+            val trackIdsJson = "[${songIds.joinToString(",")}]"
             val payload = JSONObject()
                 .put("op", "del")
                 .put("pid", playlistId.toString())
@@ -874,10 +879,13 @@ object PlaylistApi {
             val eapiBody = eapiResp.body?.string() ?: return@withContext false
             JSONObject(eapiBody).optInt("code", -1) == 200
         } catch (e: Exception) {
-            Log.e("PlaylistApi", "removeSongFromPlaylist failed: ${e.message}", e)
+            Log.e("PlaylistApi", "removeSongsFromPlaylist failed: ${e.message}", e)
             false
         }
     }
+
+    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long): Boolean =
+        removeSongsFromPlaylist(playlistId, listOf(songId))
 
     /**
      * 编辑歌单信息（名称与描述）。

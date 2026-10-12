@@ -52,7 +52,17 @@ import kotlinx.coroutines.launch
 fun AddToPlaylistSheet(
     song: SongItem,
     onDismiss: () -> Unit
+) = AddToPlaylistSheet(songs = listOf(song), onDismiss = onDismiss)
+
+@Composable
+fun AddToPlaylistSheet(
+    songs: List<SongItem>,
+    onDismiss: () -> Unit
 ) {
+    if (songs.isEmpty()) {
+        onDismiss()
+        return
+    }
     val context = LocalContext.current
     val strings = LocalStrings.current
     val coroutineScope = rememberCoroutineScope()
@@ -97,7 +107,7 @@ fun AddToPlaylistSheet(
                 val newId = PlaylistApi.createPlaylist(trimmed)
                 if (newId != null && newId != 0L) {
                     // 立即将歌曲加入新歌单
-                    PlaylistApi.addSongToPlaylist(newId, song.id)
+                    PlaylistApi.addSongsToPlaylist(newId, songs.map { it.id })
                     ContentCache.evictPlaylist(newId)
                     // 刷新用户歌单缓存
                     try {
@@ -106,7 +116,12 @@ fun AddToPlaylistSheet(
                         ContentCache.userPlaylists = result.playlists
                     } catch (_: Exception) {}
 
-                    Toast.makeText(context, strings.addToPlaylistSuccess(trimmed), Toast.LENGTH_SHORT).show()
+                    val msg = if (songs.size == 1) {
+                        strings.addToPlaylistSuccess(trimmed)
+                    } else {
+                        "已将 ${songs.size} 首歌曲加入「$trimmed」"
+                    }
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     delay(300)
                     onDismiss()
                 } else {
@@ -139,7 +154,7 @@ fun AddToPlaylistSheet(
 
                 Spacer(Modifier.height(14.dp))
 
-                // 当前选中的目标歌曲信息卡片
+                // 当前选中的目标歌曲信息卡片（单曲或批量预览）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -153,8 +168,9 @@ fun AddToPlaylistSheet(
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val firstSong = songs.first()
                     AsyncImage(
-                        model = CoverUrls.small(song.album?.picUrl),
+                        model = CoverUrls.small(firstSong.album?.picUrl),
                         contentDescription = null,
                         modifier = Modifier
                             .size(46.dp)
@@ -168,21 +184,39 @@ fun AddToPlaylistSheet(
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        MetroText(
-                            text = song.name,
-                            color = LocalMetroColors.current.onBackground,
-                            style = LocalMetroTypography.current.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        MetroText(
-                            text = song.artists?.joinToString("/") { it.name } ?: strings.unknownArtist,
-                            color = LocalMetroColors.current.onSurfaceVariant,
-                            style = LocalMetroTypography.current.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        if (songs.size == 1) {
+                            MetroText(
+                                text = firstSong.name,
+                                color = LocalMetroColors.current.onBackground,
+                                style = LocalMetroTypography.current.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            MetroText(
+                                text = firstSong.artists?.joinToString("/") { it.name } ?: strings.unknownArtist,
+                                color = LocalMetroColors.current.onSurfaceVariant,
+                                style = LocalMetroTypography.current.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            MetroText(
+                                text = "已选 ${songs.size} 首歌曲",
+                                color = LocalMetroColors.current.onBackground,
+                                style = LocalMetroTypography.current.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            MetroText(
+                                text = "包含：${songs.take(2).joinToString("、") { it.name }}${if (songs.size > 2) " 等" else ""}",
+                                color = LocalMetroColors.current.onSurfaceVariant,
+                                style = LocalMetroTypography.current.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -363,15 +397,20 @@ fun AddToPlaylistSheet(
                             .clickable(enabled = !isAdding && !isAdded) {
                                 addingToPlaylistId = pl.id
                                 coroutineScope.launch {
-                                    val res = PlaylistApi.addSongToPlaylist(pl.id, song.id)
+                                    val res = PlaylistApi.addSongsToPlaylist(pl.id, songs.map { it.id })
                                     when (res) {
                                         PlaylistApi.TrackOpResult.SUCCESS -> {
                                             addedToPlaylistId = pl.id
                                             addingToPlaylistId = null
                                             ContentCache.evictPlaylist(pl.id)
+                                            val msg = if (songs.size == 1) {
+                                                strings.addToPlaylistSuccess(pl.name)
+                                            } else {
+                                                "已将 ${songs.size} 首歌曲加入「${pl.name}」"
+                                            }
                                             Toast.makeText(
                                                 context,
-                                                strings.addToPlaylistSuccess(pl.name),
+                                                msg,
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                             delay(420)
@@ -381,7 +420,7 @@ fun AddToPlaylistSheet(
                                             addingToPlaylistId = null
                                             Toast.makeText(
                                                 context,
-                                                strings.songAlreadyInPlaylist,
+                                                if (songs.size == 1) strings.songAlreadyInPlaylist else "部分歌曲已在歌单中",
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }

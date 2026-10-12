@@ -1,8 +1,14 @@
 package com.takahashirinta.ncrust.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -51,7 +57,10 @@ fun SongCard(
     onShowMenu: (() -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
     isCurrentPlaying: Boolean = false,
-    showCover: Boolean = true
+    showCover: Boolean = true,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null
 ) {
     val strings = LocalStrings.current
     val artistStr = song.artists?.joinToString("/") { it.name } ?: strings.unknownArtist
@@ -65,36 +74,68 @@ fun SongCard(
                 else -> 72.dp
             }
 
-            // Windows 11 Fluent Design：卡片 8dp 小圆角 + 0.75dp 半透明微边框描边 + 轻盈层次
+            // 优雅沉浸式列表项：无硬边框包裹，自然流式布局，当前播放项轻柔背景高亮
             Row(
                 modifier = modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                    .clip(RoundedCornerShape(6.dp))
                     .then(
                         if (isCurrentPlaying) {
-                            Modifier
-                                .background(LocalMetroColors.current.primary.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
-                                .border(
-                                    width = 0.75.dp,
-                                    color = LocalMetroColors.current.primary.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(8.dp)
-                                )
+                            Modifier.background(
+                                LocalMetroColors.current.primary.copy(alpha = 0.08f),
+                                RoundedCornerShape(6.dp)
+                            )
                         } else {
-                            Modifier.border(
-                                width = 0.75.dp,
-                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(8.dp)
+                            Modifier
+                        }
+                    )
+                    .then(
+                        if (isSelectionMode) {
+                            Modifier.clickable { onToggleSelect?.invoke() }
+                        } else {
+                            Modifier.combinedClickable(
+                                onClick = onClick,
+                                onLongClick = { onShowMenu?.invoke() }
                             )
                         }
                     )
-                    .combinedClickable(
-                        onClick = onClick,
-                        onLongClick = { onShowMenu?.invoke() }
-                    )
-                    .padding(vertical = 4.dp, horizontal = 4.dp),
+                    .padding(vertical = 6.dp, horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                AnimatedVisibility(
+                    visible = isSelectionMode,
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) LocalMetroColors.current.primary else Color.Transparent
+                                )
+                                .border(
+                                    width = if (isSelected) 0.dp else 1.5.dp,
+                                    color = if (isSelected) Color.Transparent else LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.5f),
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                MetroIcon(
+                                    imageVector = AppIcons.Check,
+                                    contentDescription = null,
+                                    tint = LocalMetroColors.current.onPrimary,
+                                    sizeDp = 14.dp
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                    }
+                }
+
                 if (showCover) {
                     AsyncImage(
                         model = CoverUrls.small(song.album?.picUrl),
@@ -105,8 +146,8 @@ fun SongCard(
                             .size(actualCoverSize)
                             .clip(RoundedCornerShape(6.dp))
                             .border(
-                                width = 0.75.dp,
-                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                                width = 0.5.dp,
+                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.15f),
                                 shape = RoundedCornerShape(6.dp)
                             ),
                         contentScale = ContentScale.Crop
@@ -137,12 +178,29 @@ fun SongCard(
                     )
                 }
 
-                if (actions != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        actions.invoke(this)
+                if (!isSelectionMode) {
+                    if (actions != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            actions.invoke(this)
+                        }
+                    } else if (onShowMenu != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { onShowMenu.invoke() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MetroIcon(
+                                imageVector = AppIcons.MoreVert,
+                                contentDescription = null,
+                                tint = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.7f),
+                                sizeDp = 20.dp
+                            )
+                        }
                     }
+                    Spacer(Modifier.width(4.dp))
                 }
-                Spacer(Modifier.width(8.dp))
             }
         }
 

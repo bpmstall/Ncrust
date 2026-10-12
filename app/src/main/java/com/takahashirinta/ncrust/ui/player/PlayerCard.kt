@@ -227,10 +227,6 @@ fun PlayerCard(
     // 初始 0（大封面）：冷启动/splash 后若当前歌无歌词，首帧即大封面，不会"停"在歌词位
     val lyricAnimProgress = remember { Animatable(0f) }
     val queueSlideProgress = remember { Animatable(0f) }
-    val lyricsPredictiveBackProgress = remember { Animatable(0f) }
-    val lyricsPredictiveBackScale = remember { Animatable(1f) }
-    var lyricsSwipeEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    val lyricsPredictiveShiftPx = with(density) { 32.dp.toPx() }
     // 仅在歌词模式下歌词可交互；阈值穿越处各触发一次重组，其余帧零重组
     val lyricsEnabled by remember { derivedStateOf { lyricAnimProgress.value > 0.5f && queueSlideProgress.value < 0.5f } }
     // 卡片基本展开(>90%)时播放器内容区才可交互。面板常挂载、graphicsLayer 只调 alpha,
@@ -310,60 +306,11 @@ fun PlayerCard(
     // 3. 封面界面（纯播放器） -> 返回手势收起播放器（支持预测性退缩，并在提交后在 NonCancellable 上下文中平滑动画至 0，绝不因 handler 注销而反弹）
     if (progress.value > 0.01f) {
         if (showLyrics) {
-            val predictiveBackLyrics = remember(showLyrics) {
-                context.getSharedPreferences("ncrust_settings", Context.MODE_PRIVATE)
-                    .getBoolean("predictive_back_lyrics", true)
-            }
             PredictiveBackHandler(enabled = true) { events ->
-                var isCommitted = false
                 try {
-                    events.collect { event ->
-                        if (predictiveBackLyrics) {
-                            val p = event.progress
-                            lyricsSwipeEdge = event.swipeEdge
-                            lyricsPredictiveBackProgress.snapTo(p)
-                            lyricsPredictiveBackScale.snapTo((1f - p * 0.08f).coerceIn(0.92f, 1f))
-                        }
-                    }
-                    isCommitted = true
-                    if (predictiveBackLyrics) {
-                        withContext(NonCancellable) {
-                            launch {
-                                lyricsPredictiveBackProgress.animateTo(
-                                    1f,
-                                    tween(160, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                                )
-                            }
-                            launch {
-                                lyricsPredictiveBackScale.animateTo(
-                                    0.92f,
-                                    tween(160, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                                )
-                            }
-                        }
-                    }
-                    lyricAnimProgress.snapTo(0f)
+                    events.collect {}
                     showLyrics = false
-                    lyricsPredictiveBackProgress.snapTo(0f)
-                    lyricsPredictiveBackScale.snapTo(1f)
-                } catch (_: CancellationException) {
-                    if (!isCommitted && predictiveBackLyrics) {
-                        withContext(NonCancellable) {
-                            launch {
-                                lyricsPredictiveBackProgress.animateTo(
-                                    0f,
-                                    tween(180, easing = FastOutSlowInEasing)
-                                )
-                            }
-                            launch {
-                                lyricsPredictiveBackScale.animateTo(
-                                    1f,
-                                    tween(180, easing = FastOutSlowInEasing)
-                                )
-                            }
-                        }
-                    }
-                }
+                } catch (_: CancellationException) {}
             }
         } else if (showQueue) {
             PredictiveBackHandler(enabled = true) { events ->
@@ -704,14 +651,8 @@ fun PlayerCard(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
-                                    val backP = lyricsPredictiveBackProgress.value
-                                    alpha = (lyricAnimProgress.value * (1f - backP * 0.4f)).coerceIn(0f, 1f)
-                                    val scale = lyricsPredictiveBackScale.value
-                                    scaleX = scale
-                                    scaleY = scale
-                                    val backShiftX = (if (lyricsSwipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f) * backP * lyricsPredictiveShiftPx
-                                    translationX = -queueSlideProgress.value * size.width + backShiftX
-                                    transformOrigin = TransformOrigin(0.5f, 0.5f)
+                                    alpha = lyricAnimProgress.value.coerceIn(0f, 1f)
+                                    translationX = -queueSlideProgress.value * size.width
                                 }
                                 .pointerInput(Unit) {
                                     detectTapGestures {
@@ -1201,23 +1142,16 @@ fun PlayerCard(
                         val currentCenterY = miniCoverCenterY + normalizedP * (targetCenterY - miniCoverCenterY)
                         val currentBaseScale = miniScale + normalizedP * (targetScale - miniScale)
 
-                        val backP = lyricsPredictiveBackProgress.value
                         alpha = if (isWidePlayer) {
                             1f
                         } else {
                             maxOf(
                                 1f - lyricAnimProgress.value,
-                                (1f - p * 5f).coerceIn(0f, 1f),
-                                backP
+                                (1f - p * 5f).coerceIn(0f, 1f)
                             )
                         }
-                        val coverBackScale = if (!isWidePlayer && showLyrics && backP > 0f) {
-                            0.94f + backP * 0.06f
-                        } else {
-                            1f
-                        }
-                        scaleX = currentBaseScale * coverBackScale
-                        scaleY = currentBaseScale * coverBackScale
+                        scaleX = currentBaseScale
+                        scaleY = currentBaseScale
                         translationX = currentCenterX - boundsCenter
                         translationY = currentCenterY - boundsCenter
                         transformOrigin = TransformOrigin(0.5f, 0.5f)
