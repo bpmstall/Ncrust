@@ -44,6 +44,14 @@ data class Strings(
     val clearCache: String,
     val clearCacheConfirm: String,
     val cacheCleared: String,
+    val hyperosIslandTitle: String = "Xiaomi HyperOS 焦点通知",
+    val hyperosIslandDesc: String = "在小米澎湃 OS 状态栏与胶囊岛展示播放卡片及控制 (Live Updates)",
+    val predictiveBackLyricsTitle: String = "歌词预测性手势返回",
+    val predictiveBackLyricsDesc: String = "在歌词界面侧滑返回时先收起歌词回到封面，避免误触直接退出播放器",
+    val lowPowerModeTitle: String = "性能与低功耗模式",
+    val lowPowerModeDesc: String = "降低前后台动画负载，减少电量消耗并提升流畅度",
+    val coverCacheLabel: (Long) -> String = { "封面缓存: ${formatCacheBytes(it)}" },
+    val lyricsCacheLabel: (Long) -> String = { "歌词缓存: ${formatCacheBytes(it)}" },
 
     // Home screen
     val dailySongsTitle: String,

@@ -71,4 +71,16 @@ object LyricsCache {
             }
         }
     }
+
+    suspend fun clear(context: Context) = withContext(Dispatchers.IO) {
+        synchronized(lock) {
+            memory?.clear()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        }
+    }
+
+    fun sizeBytes(context: Context): Long {
+        val prefsFile = java.io.File(context.applicationInfo.dataDir, "shared_prefs/$PREFS.xml")
+        return if (prefsFile.exists()) prefsFile.length() else 0L
+    }
 }

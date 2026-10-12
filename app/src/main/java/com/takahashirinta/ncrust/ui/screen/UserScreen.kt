@@ -45,6 +45,7 @@ import coil.compose.AsyncImage
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.takahashirinta.ncrust.auth.CookieManager
 import com.takahashirinta.ncrust.cache.ContentCache
+import com.takahashirinta.ncrust.lyric.LyricsCache
 import android.content.Context
 import android.widget.Toast
 import com.takahashirinta.ncrust.network.PlaylistApi
@@ -84,10 +85,24 @@ fun UserScreen(
     var showQrLogin by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
     var showClearCacheConfirm by remember { mutableStateOf(false) }
-    var cacheSize by remember { mutableStateOf(0L) }
-    // 缓存占用要递归遍历 cacheDir，放 IO 线程算，避免组合期主线程卡顿。
+    var coverCacheSize by remember { mutableStateOf(0L) }
+    var lyricsCacheSize by remember { mutableStateOf(0L) }
+    var totalCacheSize by remember { mutableStateOf(0L) }
+
+    suspend fun updateCacheSizes() {
+        val (cover, lyrics, total) = withContext(Dispatchers.IO) {
+            val coverBytes = coil.Coil.imageLoader(context).diskCache?.size ?: 0L
+            val lyricsBytes = LyricsCache.sizeBytes(context)
+            val totalBytes = currentCacheSize(context) + lyricsBytes
+            Triple(coverBytes, lyricsBytes, totalBytes)
+        }
+        coverCacheSize = cover
+        lyricsCacheSize = lyrics
+        totalCacheSize = total
+    }
+
     LaunchedEffect(Unit) {
-        cacheSize = withContext(Dispatchers.IO) { currentCacheSize(context) }
+        updateCacheSizes()
     }
     var hasCookie by remember { mutableStateOf(CookieManager.hasCookie(context)) }
     // 扫码登录为平板 / 大屏独占：手机端未登录点头像仍直接进 WebView 官方登录页。
@@ -100,6 +115,9 @@ fun UserScreen(
     val playerViewModel: PlayerViewModel = viewModel()
     var wifiQuality by remember { mutableIntStateOf(prefs.getInt("wifi_quality", 3)) }
     var mobileQuality by remember { mutableIntStateOf(prefs.getInt("mobile_quality", 1)) }
+    var hyperosIslandEnabled by remember { mutableStateOf(prefs.getBoolean("hyperos_island_enabled", true)) }
+    var predictiveBackLyrics by remember { mutableStateOf(prefs.getBoolean("predictive_back_lyrics", true)) }
+    var lowPowerMode by remember { mutableStateOf(prefs.getBoolean("low_power_mode", false)) }
     var gaplessEnabled by remember { mutableStateOf(prefs.getBoolean("gapless_playback", true)) }
     var lyricsTranslation by remember { mutableStateOf(prefs.getBoolean("lyrics_translation", true)) }
     var lyricsFontSize by remember { mutableIntStateOf(prefs.getInt("lyrics_font_size", 1)) }
@@ -191,20 +209,20 @@ fun UserScreen(
         onConfirm = {
             showClearCacheConfirm = false
             coroutineScope.launch {
-                val size = withContext(Dispatchers.IO) {
+                withContext(Dispatchers.IO) {
                     ContentCache.clearAll()
+                    LyricsCache.clear(context)
                     runCatching { coil.Coil.imageLoader(context).memoryCache?.clear() }
                     runCatching { coil.Coil.imageLoader(context).diskCache?.clear() }
                     runCatching {
                         context.cacheDir?.let { dir ->
                             dir.listFiles()
-                                ?.filter { it.name == "WebView" || it.name == "http" }
+                                ?.filter { it.name == "WebView" || it.name == "http" || it.name == "image_cache" }
                                 ?.forEach { it.deleteRecursively() }
                         }
                     }
-                    currentCacheSize(context)
                 }
-                cacheSize = size
+                updateCacheSizes()
                 Toast.makeText(context, strings.cacheCleared, Toast.LENGTH_SHORT).show()
             }
         },
@@ -282,10 +300,20 @@ fun UserScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        // 播放与歌词
+        // 播放与系统集成
         item {
             SectionHeader(AppIcons.Playback, strings.playbackSectionTitle)
             SettingsCard {
+                SettingSwitchRow(
+                    title = strings.hyperosIslandTitle,
+                    description = strings.hyperosIslandDesc,
+                    checked = hyperosIslandEnabled,
+                    onCheckedChange = {
+                        hyperosIslandEnabled = it
+                        prefs.edit().putBoolean("hyperos_island_enabled", it).apply()
+                    }
+                )
+                CardDivider()
                 SettingSwitchRow(
                     title = strings.gaplessSectionTitle,
                     description = strings.gaplessDescription,
@@ -297,6 +325,23 @@ fun UserScreen(
                     }
                 )
                 CardDivider()
+                SettingSwitchRow(
+                    title = strings.predictiveBackLyricsTitle,
+                    description = strings.predictiveBackLyricsDesc,
+                    checked = predictiveBackLyrics,
+                    onCheckedChange = {
+                        predictiveBackLyrics = it
+                        prefs.edit().putBoolean("predictive_back_lyrics", it).apply()
+                    }
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+
+        // 歌词与显示
+        item {
+            SectionHeader(AppIcons.Lyrics, "歌词与交互")
+            SettingsCard {
                 SettingSwitchRow(
                     title = strings.lyricsTranslationLabel,
                     checked = lyricsTranslation,
@@ -319,7 +364,7 @@ fun UserScreen(
                 CardDivider()
                 SettingSwitchRow(
                     title = "歌词居中对齐",
-                    description = "关闭为居左对齐（Apple Music/Spotify风格），开启为居中对齐",
+                    description = "关闭为居左对齐，开启为居中对齐",
                     checked = lyricsAlignCenter,
                     onCheckedChange = {
                         lyricsAlignCenter = it
@@ -346,13 +391,23 @@ fun UserScreen(
                     }
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
         }
 
-        // 视觉与现代质感
+        // 视觉与性能
         item {
-            SectionHeader(AppIcons.Visual, "视觉与现代质感")
+            SectionHeader(AppIcons.Visual, "视觉与性能")
             SettingsCard {
+                SettingSwitchRow(
+                    title = strings.lowPowerModeTitle,
+                    description = strings.lowPowerModeDesc,
+                    checked = lowPowerMode,
+                    onCheckedChange = {
+                        lowPowerMode = it
+                        prefs.edit().putBoolean("low_power_mode", it).apply()
+                    }
+                )
+                CardDivider()
                 SettingSwitchRow(
                     title = "动态封面氛围模糊背景",
                     description = "从当前歌曲封面提取色彩与柔和高斯模糊，在全屏播放器背景渲染",
@@ -364,8 +419,8 @@ fun UserScreen(
                 )
                 CardDivider()
                 SettingSwitchRow(
-                    title = "现代化大圆角卡片",
-                    description = "使用 18dp~20dp 现代大圆角与浮岛设计（Xiaomi HyperOS 风格）",
+                    title = "Fluent Design 质感小圆角与微边框",
+                    description = "卡片与封面采用 8dp/6dp 小圆角，叠加 0.75dp 半透明微边框描边提升层次质感",
                     checked = modernRoundedCorners,
                     onCheckedChange = {
                         modernRoundedCorners = it
@@ -383,7 +438,7 @@ fun UserScreen(
                     }
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
         }
 
         // 外观：主题模式 + 主题色 + 语言
@@ -421,12 +476,67 @@ fun UserScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
         }
 
-        // 系统与存储
+        // 存储与缓存管理
         item {
-            SectionHeader(AppIcons.Settings, "系统与存储")
+            SectionHeader(AppIcons.Storage, strings.storageSectionTitle)
+            SettingsCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroText(
+                        strings.coverCacheLabel(coverCacheSize),
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 14.sp),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                CardDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroText(
+                        strings.lyricsCacheLabel(lyricsCacheSize),
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 14.sp),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                CardDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showClearCacheConfirm = true }
+                        .padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MetroText(
+                        strings.cacheSizeLabel(totalCacheSize),
+                        color = LocalMetroColors.current.onBackground,
+                        style = TextStyle(fontSize = 14.5.sp, fontWeight = FontWeight.Medium),
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetroText(
+                        strings.clearCache,
+                        color = LocalMetroColors.current.primary,
+                        style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+
+        // 系统与关于
+        item {
+            SectionHeader(AppIcons.Settings, "系统与关于")
             SettingsCard {
                 Row(
                     modifier = Modifier
@@ -440,40 +550,20 @@ fun UserScreen(
                                 }
                             }
                         }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MetroText(
                         strings.batteryTitle,
                         color = LocalMetroColors.current.onBackground,
-                        style = TextStyle(fontSize = 15.sp),
+                        style = TextStyle(fontSize = 14.5.sp),
                         modifier = Modifier.weight(1f)
                     )
                     MetroIcon(
                         AppIcons.ChevronRight,
                         contentDescription = null,
                         tint = LocalMetroColors.current.onSurfaceVariant,
-                        sizeDp = 20.dp,
-                    )
-                }
-                CardDivider()
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showClearCacheConfirm = true }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    MetroText(
-                        strings.cacheSizeLabel(cacheSize),
-                        color = LocalMetroColors.current.onBackground,
-                        style = TextStyle(fontSize = 15.sp),
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetroText(
-                        strings.clearCache,
-                        color = LocalMetroColors.current.primary,
-                        style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        sizeDp = 18.dp,
                     )
                 }
                 CardDivider()
@@ -481,20 +571,20 @@ fun UserScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onOpenAbout)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     MetroText(
                         strings.aboutButton,
                         color = LocalMetroColors.current.onBackground,
-                        style = TextStyle(fontSize = 15.sp),
+                        style = TextStyle(fontSize = 14.5.sp),
                         modifier = Modifier.weight(1f)
                     )
                     MetroIcon(
                         AppIcons.ChevronRight,
                         contentDescription = null,
                         tint = LocalMetroColors.current.onSurfaceVariant,
-                        sizeDp = 20.dp,
+                        sizeDp = 18.dp,
                     )
                 }
             }
@@ -515,14 +605,14 @@ private fun SettingsCard(
             .padding(horizontal = 16.dp)
             .background(
                 color = LocalMetroColors.current.surface,
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(8.dp)
             )
             .border(
-                width = 1.dp,
-                color = LocalMetroColors.current.surfaceVariant.copy(alpha = 0.45f),
-                shape = RoundedCornerShape(14.dp)
+                width = 0.75.dp,
+                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(8.dp)
             )
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(8.dp))
     ) {
         content()
     }
@@ -582,14 +672,14 @@ private fun ProfileBlock(
             .padding(horizontal = 16.dp)
             .background(
                 color = LocalMetroColors.current.surface,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(8.dp)
             )
             .border(
-                width = 1.dp,
-                color = LocalMetroColors.current.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp)
+                width = 0.75.dp,
+                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(8.dp)
             )
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -597,7 +687,7 @@ private fun ProfileBlock(
         Box(
             modifier = Modifier
                 .size(64.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(LocalMetroColors.current.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
@@ -770,7 +860,7 @@ private fun ThemeModeSelector(
         ThemeMode.DARK to labels.second,
         ThemeMode.LIGHT to labels.third
     )
-    val chipShape = RoundedCornerShape(8.dp)
+    val chipShape = RoundedCornerShape(6.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -783,7 +873,7 @@ private fun ThemeModeSelector(
                 modifier = Modifier
                     .weight(1f)
                     .border(
-                        1.dp,
+                        0.75.dp,
                         if (active) LocalMetroColors.current.primary
                         else LocalMetroColors.current.divider.copy(alpha = 0.5f),
                         chipShape
@@ -793,21 +883,21 @@ private fun ThemeModeSelector(
                         else Color.Transparent,
                         chipShape
                     )
-                    .clickable { onSelect(mode) }
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                MetroText(
-                    label,
-                    color = if (active) LocalMetroColors.current.primary
-                    else LocalMetroColors.current.onSurfaceVariant,
-                    style = TextStyle(fontSize = 14.sp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+                .clickable { onSelect(mode) }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            MetroText(
+                label,
+                color = if (active) LocalMetroColors.current.primary
+                else LocalMetroColors.current.onSurfaceVariant,
+                style = TextStyle(fontSize = 14.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
+}
 }
 
 /** 清除缓存确认弹窗。 */
@@ -818,14 +908,14 @@ private fun ClearCacheConfirmDialog(
 ) {
     val strings = LocalStrings.current
     Dialog(onDismissRequest = onDismiss) {
-        val dialogShape = RoundedCornerShape(16.dp)
+        val dialogShape = RoundedCornerShape(8.dp)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(LocalMetroColors.current.surface, dialogShape)
                 .border(
-                    1.dp,
-                    LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.2f),
+                    0.75.dp,
+                    LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
                     dialogShape
                 )
                 .padding(24.dp)
