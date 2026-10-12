@@ -8,7 +8,10 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideOut
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.IntOffset
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -20,6 +23,47 @@ import com.takahashirinta.ncrust.ui.screen.*
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+
+private val FluentMotionEasing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1.0f)
+private const val FLUENT_ENTER_MS = 220
+private const val FLUENT_EXIT_MS = 180
+
+private fun <T> AnimatedContentTransitionScope<T>.fluentEnterTransition(): EnterTransition =
+    slideIntoContainer(
+        AnimatedContentTransitionScope.SlideDirection.Up,
+        animationSpec = tween(FLUENT_ENTER_MS, easing = FluentMotionEasing),
+        initialOffset = { (it * 0.08f).toInt().coerceIn(100, 240) }
+    ) + scaleIn(
+        initialScale = 0.96f,
+        animationSpec = tween(FLUENT_ENTER_MS, easing = FluentMotionEasing)
+    ) + fadeIn(
+        animationSpec = tween(FLUENT_ENTER_MS, easing = FluentMotionEasing)
+    )
+
+private fun <T> AnimatedContentTransitionScope<T>.fluentExitTransition(): ExitTransition =
+    slideOutOfContainer(
+        AnimatedContentTransitionScope.SlideDirection.Up,
+        animationSpec = tween(FLUENT_EXIT_MS, easing = FluentMotionEasing),
+        targetOffset = { -(it * 0.04f).toInt().coerceIn(40, 120) }
+    ) + fadeOut(
+        animationSpec = tween(FLUENT_EXIT_MS, easing = FluentMotionEasing)
+    )
+
+private fun <T> AnimatedContentTransitionScope<T>.fluentPopEnterTransition(): EnterTransition =
+    scaleIn(
+        initialScale = 0.97f,
+        animationSpec = tween(FLUENT_ENTER_MS, easing = FluentMotionEasing)
+    ) + fadeIn(
+        animationSpec = tween(FLUENT_ENTER_MS, easing = FluentMotionEasing)
+    )
+
+private fun <T> AnimatedContentTransitionScope<T>.fluentPopExitTransition(): ExitTransition =
+    slideOut(
+        animationSpec = tween(FLUENT_EXIT_MS, easing = FastOutSlowInEasing),
+        targetOffset = { IntOffset((it.width * 0.08f).toInt().coerceIn(60, 180), (it.height * 0.06f).toInt().coerceIn(60, 180)) }
+    ) + fadeOut(
+        animationSpec = tween(FLUENT_EXIT_MS, easing = FastOutSlowInEasing)
+    )
 
 object NavRoutes {
     const val HOME = "home"
@@ -46,37 +90,15 @@ fun MainNavGraph(
     onShowSongMenu: (SongItem, List<SongMenuAction>) -> Unit = { _, _ -> },
     startDestination: String = NavRoutes.HOME
 ) {
-    // 页面切换直接跳变, 不做转场动画(用户决策)。
-    // 转场期间新旧两页同帧渲染, slide/fade 每帧都要全屏合成, 低端机上
-    // 是切换动作的主要掉帧源; 详情页内容有 ContentCache/磁盘缓存兜底,
-    // 跳变"瞬间出现完整内容"反而更利落, 且零中间帧。
+    // 路由层级转场动画：采用 Windows 11 Fluent Design Motion 规范
+    // 微位移(80dp 范围) + 微缩放(0.96f->1f) + 柔和淡入淡出，消除掉帧与重排
     NavHost(
         navController = navController,
         startDestination = startDestination,
-        enterTransition = {
-            slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.Start,
-                animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-            ) + fadeIn(animationSpec = tween(200))
-        },
-        exitTransition = {
-            slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.Start,
-                animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-            ) + fadeOut(animationSpec = tween(200))
-        },
-        popEnterTransition = {
-            slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.End,
-                animationSpec = tween(240, easing = FastOutSlowInEasing)
-            ) + fadeIn(animationSpec = tween(200))
-        },
-        popExitTransition = {
-            slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.End,
-                animationSpec = tween(240, easing = FastOutSlowInEasing)
-            ) + fadeOut(animationSpec = tween(180))
-        }
+        enterTransition = { fluentEnterTransition() },
+        exitTransition = { fluentExitTransition() },
+        popEnterTransition = { fluentPopEnterTransition() },
+        popExitTransition = { fluentPopExitTransition() }
     ) {
         composable(NavRoutes.HOME) {
             // 不渲染任何内容，由 MainScreen 的 Scaffold 内容填充
@@ -85,27 +107,10 @@ fun MainNavGraph(
         composable(
             route = NavRoutes.ALBUM,
             arguments = listOf(navArgument("albumId") { type = NavType.LongType }),
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                ) + fadeIn(animationSpec = tween(200))
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(180))
-            },
-            popEnterTransition = {
-                fadeIn(animationSpec = tween(200))
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(180))
-            }
+            enterTransition = { fluentEnterTransition() },
+            exitTransition = { fluentExitTransition() },
+            popEnterTransition = { fluentPopEnterTransition() },
+            popExitTransition = { fluentPopExitTransition() }
         ) { backStackEntry ->
             val albumId = backStackEntry.arguments?.getLong("albumId") ?: return@composable
             AlbumDetailScreen(
@@ -124,27 +129,10 @@ fun MainNavGraph(
         composable(
             route = NavRoutes.ARTIST,
             arguments = listOf(navArgument("artistId") { type = NavType.LongType }),
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                ) + fadeIn(animationSpec = tween(200))
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(180))
-            },
-            popEnterTransition = {
-                fadeIn(animationSpec = tween(200))
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(180))
-            }
+            enterTransition = { fluentEnterTransition() },
+            exitTransition = { fluentExitTransition() },
+            popEnterTransition = { fluentPopEnterTransition() },
+            popExitTransition = { fluentPopExitTransition() }
         ) { backStackEntry ->
             val artistId = backStackEntry.arguments?.getLong("artistId") ?: return@composable
             ArtistDetailScreen(
@@ -165,27 +153,10 @@ fun MainNavGraph(
                 navArgument("playlistName") { type = NavType.StringType; defaultValue = "" },
                 navArgument("playlistCoverUrl") { type = NavType.StringType; defaultValue = "" }
             ),
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-                ) + fadeIn(animationSpec = tween(200))
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(180))
-            },
-            popEnterTransition = {
-                fadeIn(animationSpec = tween(200))
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) + fadeOut(animationSpec = tween(180))
-            }
+            enterTransition = { fluentEnterTransition() },
+            exitTransition = { fluentExitTransition() },
+            popEnterTransition = { fluentPopEnterTransition() },
+            popExitTransition = { fluentPopExitTransition() }
         ) { backStackEntry ->
             val playlistId = backStackEntry.arguments?.getLong("playlistId") ?: return@composable
             // ← 解码
@@ -213,7 +184,11 @@ fun MainNavGraph(
 
         composable(
             route = NavRoutes.SONG_DETAIL,
-            arguments = listOf(navArgument("songId") { type = NavType.LongType })
+            arguments = listOf(navArgument("songId") { type = NavType.LongType }),
+            enterTransition = { fluentEnterTransition() },
+            exitTransition = { fluentExitTransition() },
+            popEnterTransition = { fluentPopEnterTransition() },
+            popExitTransition = { fluentPopExitTransition() }
         ) { backStackEntry ->
             val songId = backStackEntry.arguments?.getLong("songId") ?: return@composable
             SongDetailScreen(
