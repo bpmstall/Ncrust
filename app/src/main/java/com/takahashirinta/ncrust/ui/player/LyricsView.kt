@@ -12,13 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -77,15 +75,13 @@ fun LyricsView(
         lyrics.map { MetroLyricLine(it.timeMs, it.text, translation = tMap[it.timeMs]?.text ?: "") }
     }
 
-    // 订阅位置流:collectAsState 建 State;displayPosition 只在面板 draw/derived
-    // 阶段被读,按需写一次也只重算当前行,不触发本 Composable 重组。
-    val positionState = positionFlow.collectAsState()
     // 时钟跟歌曲走，不跟歌词列表走。切歌时歌词会先被清空再异步填回，
     // 若只 remember(lyrics)，新列表到达前外推仍挂在上一首的锚点上。
-    var displayPosition by remember(songId) { mutableLongStateOf(positionState.value) }
+    // 直接使用 positionFlow.value 初始化，避免 collectAsState 导致本 Composable 每 500ms 重组。
+    var displayPosition by remember(songId) { mutableLongStateOf(positionFlow.value) }
     val anchor = remember(songId) {
         PositionAnchor().apply {
-            anchorPosMs = positionState.value
+            anchorPosMs = positionFlow.value
             anchorNanos = System.nanoTime()
         }
     }
@@ -100,8 +96,9 @@ fun LyricsView(
     val timestamps = remember(lyrics) { LongArray(lyrics.size) { lyrics[it].timeMs } }
 
     // 2Hz 采样到达时重置外推锚点(首帧前锚点已就位,避免一帧闪到末尾)。
-    LaunchedEffect(Unit) {
-        snapshotFlow { positionState.value }.collect { pos ->
+    // 直接 collect positionFlow，零 State 桥接，不触发 LyricsView 重组。
+    LaunchedEffect(positionFlow) {
+        positionFlow.collect { pos ->
             anchor.anchorPosMs = pos
             anchor.anchorNanos = System.nanoTime()
             sampleStamp++
@@ -116,8 +113,8 @@ fun LyricsView(
     // 外部强制定位（如切歌展开、歌词面板滑出）
     LaunchedEffect(forcedLocateTrigger) {
         if (forcedLocateTrigger != 0) {
-            displayPosition = positionState.value
-            anchor.anchorPosMs = positionState.value
+            displayPosition = positionFlow.value
+            anchor.anchorPosMs = positionFlow.value
             anchor.anchorNanos = System.nanoTime()
         }
     }
@@ -127,8 +124,8 @@ fun LyricsView(
     // 2Hz 采样会把锚点重置回真实值,所以外推误差不会累积。暂停/隐藏即停。
     LaunchedEffect(isPlaying, isBuffering, isVisible, timestamps) {
         if (!isPlaying || isBuffering || !isVisible) {
-            displayPosition = positionState.value
-            anchor.anchorPosMs = positionState.value
+            displayPosition = positionFlow.value
+            anchor.anchorPosMs = positionFlow.value
             anchor.anchorNanos = System.nanoTime()
             return@LaunchedEffect
         }
@@ -210,25 +207,24 @@ fun LyricsView(
         )
 
         if (lyrics.isNotEmpty()) {
-        // 上下边缘淡出,让歌词从黑里浮出来(上下对称靠近边框)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(listOf(LocalMetroColors.current.background, Color.Transparent))
-                )
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(listOf(Color.Transparent, LocalMetroColors.current.background))
-                )
-        )
+            val bg = LocalMetroColors.current.background
+            val topGradient = remember(bg) { Brush.verticalGradient(listOf(bg, Color.Transparent)) }
+            val bottomGradient = remember(bg) { Brush.verticalGradient(listOf(Color.Transparent, bg)) }
+            // 上下边缘淡出,让歌词从黑里浮出来(上下对称靠近边框)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .align(Alignment.TopCenter)
+                    .background(topGradient)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(bottomGradient)
+            )
         }
     }
 }
