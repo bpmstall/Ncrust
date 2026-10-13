@@ -283,8 +283,8 @@ fun PlayerCard(
                 when {
                     // 已在列表位置（或正在返回），无需再动
                     queueSlideProgress.value > 0.99f -> {}
-                    // 来自稳定歌词模式（lyricAnimProgress 已是 1）→ 横滑
-                    lyricAnimProgress.value > 0.95f -> {
+                    // 来自稳定歌词模式（lyricAnimProgress 已展开）→ 无缝横滑
+                    lyricAnimProgress.value > 0.5f -> {
                         queueSlideProgress.animateTo(1f, SokuouTweens.SheetDismiss)
                     }
                     // 来自大封面模式 → 不横滑，仅随封面缩小淡入
@@ -642,21 +642,20 @@ fun PlayerCard(
                 // 歌词 / 队列双面板（窄屏整宽 / 宽屏右栏共用）。
                 val playerPanels: @Composable (Modifier) -> Unit = { panelModifier ->
                     Box(modifier = panelModifier) {
-                        // 歌词面板：translationX 从 0 滑至 -screenWidthPx，确保非歌词模式下完全移出屏幕，
-                        // 彻底消除与列表面板的命中测试重叠（combinedClickable 忽略 isConsumed 标志）
-                        // alpha 用阶梯而非交叉淡化: 切换时源面板瞬时隐藏、目标面板单层全宽滑入,
-                        // 每帧只合成一个面板——原先 260ms 内两个全屏面板同时 alpha 混合是
-                        // 低端机上左右切换动作的主要 GPU 成本。
-                        if (showLyrics) Column(
+                        // 歌词面板：支持歌词与队列左右平滑无缝互滑，切换期间两面板同轴并排滑入/滑出
+                        val lyricsInView = showLyrics || (lyricAnimProgress.value > 0.01f && queueSlideProgress.value < 0.999f)
+                        if (lyricsInView) Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
                                     alpha = lyricAnimProgress.value.coerceIn(0f, 1f)
                                     translationX = -queueSlideProgress.value * size.width
                                 }
-                                .pointerInput(Unit) {
-                                    detectTapGestures {
-                                        showLyrics = false
+                                .pointerInput(showLyrics) {
+                                    if (showLyrics) {
+                                        detectTapGestures {
+                                            showLyrics = false
+                                        }
                                     }
                                 }
                         ) {
@@ -743,17 +742,15 @@ fun PlayerCard(
                             }
                         }
 
-                        // 列表面板：translationX 从 +screenWidthPx 滑至 0，稳定态时完全在屏幕外
-                        // alpha 阶梯同上: q < 0.01 时完全透明, 切换只合成单个面板
-                        // 面板标题行高度: 队列自动定位要按"整个队列区域"(含标题行)居中
+                        // 列表面板：与歌词无缝同轴滑动
                         var queueHeaderHeightPx by remember { mutableFloatStateOf(0f) }
-                        if (showQueue) Column(
+                        val queueInView = showQueue || (lyricAnimProgress.value > 0.01f && queueSlideProgress.value > 0.001f)
+                        if (queueInView) Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
-                                    val q = queueSlideProgress.value
-                                    alpha = lyricAnimProgress.value * if (q > 0.01f) 1f else 0f
-                                    translationX = (1f - q) * size.width
+                                    alpha = lyricAnimProgress.value.coerceIn(0f, 1f)
+                                    translationX = (1f - queueSlideProgress.value) * size.width
                                 }
                         ) {
                             Row(
