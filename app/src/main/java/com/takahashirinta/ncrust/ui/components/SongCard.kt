@@ -79,13 +79,9 @@ fun SongCard(
                 modifier = modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 1.dp)
-                    .clip(RoundedCornerShape(6.dp))
                     .then(
                         if (isCurrentPlaying) {
-                            Modifier.background(
-                                LocalMetroColors.current.primary.copy(alpha = 0.08f),
-                                RoundedCornerShape(6.dp)
-                            )
+                            Modifier.background(LocalMetroColors.current.primary.copy(alpha = 0.08f))
                         } else {
                             Modifier
                         }
@@ -142,14 +138,7 @@ fun SongCard(
                         contentDescription = strings.coverDesc,
                         // 纯色占位:避免低端机解码完成前出现"空方块"闪变(Metro 不做 crossfade,直接落图)
                         placeholder = ColorPainter(LocalMetroColors.current.surfaceVariant),
-                        modifier = Modifier
-                            .size(actualCoverSize)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(
-                                width = 0.5.dp,
-                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(6.dp)
-                            ),
+                        modifier = Modifier.size(actualCoverSize),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))
@@ -187,7 +176,6 @@ fun SongCard(
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                                .clip(RoundedCornerShape(6.dp))
                                 .clickable { onShowMenu.invoke() },
                             contentAlignment = Alignment.Center
                         ) {
@@ -211,12 +199,6 @@ fun SongCard(
             val scaleScope = rememberCoroutineScope()
             Column(
                 modifier = modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .border(
-                        width = 0.75.dp,
-                        color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
-                        shape = RoundedCornerShape(8.dp)
-                    )
                     .background(LocalMetroColors.current.surfaceVariant.copy(alpha = 0.35f))
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -242,13 +224,7 @@ fun SongCard(
                     placeholder = ColorPainter(LocalMetroColors.current.surfaceVariant),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .border(
-                            width = 0.75.dp,
-                            color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.22f),
-                            shape = RoundedCornerShape(6.dp)
-                        ),
+                        .aspectRatio(1f),
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.height(8.dp))

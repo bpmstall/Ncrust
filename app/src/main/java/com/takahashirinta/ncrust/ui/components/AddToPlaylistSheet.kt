@@ -172,14 +172,7 @@ fun AddToPlaylistSheet(
                     AsyncImage(
                         model = CoverUrls.small(firstSong.album?.picUrl),
                         contentDescription = null,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(
-                                width = 0.75.dp,
-                                color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(6.dp)
-                            ),
+                        modifier = Modifier.size(46.dp),
                         contentScale = ContentScale.Crop
                     )
                     Spacer(Modifier.width(12.dp))
@@ -441,14 +434,7 @@ fun AddToPlaylistSheet(
                         AsyncImage(
                             model = CoverUrls.small(pl.coverImgUrl),
                             contentDescription = null,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .border(
-                                    width = 0.75.dp,
-                                    color = LocalMetroColors.current.onSurfaceVariant.copy(alpha = 0.18f),
-                                    shape = RoundedCornerShape(6.dp)
-                                ),
+                            modifier = Modifier.size(44.dp),
                             contentScale = ContentScale.Crop
                         )
                         Spacer(Modifier.width(12.dp))
