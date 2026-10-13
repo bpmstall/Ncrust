@@ -62,6 +62,7 @@ import com.takahashirinta.ncrust.ui.icons.AppIcons
 import io.github.takahashirinta.kanesumi.structure.MetroTopScrim
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -223,16 +224,22 @@ private fun DetailScaffoldImpl(
                 backTranslateY.snapTo(targetTranslateY)
                 backAlpha.snapTo(targetAlpha)
             }
+            // 提交确定返回：必须挂起等待动画真正播放完毕，否则立即 onBack() 会直接卸载界面导致零动画瞬切
             withContext(NonCancellable) {
-                launch { backTranslateY.animateTo(screenHeightPx, tween(200, easing = FastOutSlowInEasing)) }
-                launch { backAlpha.animateTo(0f, tween(180)) }
+                coroutineScope {
+                    launch { backTranslateY.animateTo(screenHeightPx, tween(200, easing = FastOutSlowInEasing)) }
+                    launch { backAlpha.animateTo(0f, tween(180)) }
+                }
             }
             onBack()
         } catch (_: CancellationException) {
+            // 手势取消：平滑复位弹回原位
             withContext(NonCancellable) {
-                launch { backScale.animateTo(1f, SokuouTweens.QuickSwitch) }
-                launch { backTranslateY.animateTo(0f, SokuouTweens.QuickSwitch) }
-                launch { backAlpha.animateTo(1f, SokuouTweens.QuickSwitch) }
+                coroutineScope {
+                    launch { backScale.animateTo(1f, SokuouTweens.QuickSwitch) }
+                    launch { backTranslateY.animateTo(0f, SokuouTweens.QuickSwitch) }
+                    launch { backAlpha.animateTo(1f, SokuouTweens.QuickSwitch) }
+                }
             }
         }
     }
