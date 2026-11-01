@@ -104,6 +104,10 @@ class PlaybackService : MediaLibraryService() {
         // Carries the full metadata of the item that actually started (same source as audio).
         var onSongTransitioned: ((NowPlaying) -> Unit)? = null
         var onBufferingChanged: ((Boolean) -> Unit)? = null
+        // 语音搜索（车机 / 蓝牙耳机上 "play <query>" 的媒体按键）。系统把查询串交给
+        // MediaSession，搜索与入队的决定留给 UI 层——只有那里知道当前队列与播放模式。
+        // service 绝不自己取流直连播放：那会绕过「queue[index] ≡ 正在播的曲」不变量。
+        var onPlayFromSearch: ((String) -> Unit)? = null
         var mediaTitle: String = "Ncrust"
         var mediaArtist: String = ""
         var mediaSongId: Long? = null
@@ -185,6 +189,14 @@ class PlaybackService : MediaLibraryService() {
                 override fun onSkipToNext() { onPlaybackEnded?.invoke() }
                 override fun onSkipToPrevious() { onPlaybackPrevious?.invoke() }
                 override fun onSeekTo(pos: Long) { player.seekTo(pos) }
+                // 语音搜索（Android Auto / 蓝牙媒体按键）：只把非空 query 转给 UI 层，
+                // 由 MainScreen 决定怎么搜、怎么入队；空串/纯空白不打扰队列。
+                override fun onPlayFromSearch(query: String?, extras: Bundle?) {
+                    val q = query?.trim().orEmpty()
+                    // 显式走 PlaybackService.xxx：这里的成员方法也叫 onPlayFromSearch，
+                    // 不加限定容易被解析成成员函数引用。
+                    if (q.isNotEmpty()) PlaybackService.onPlayFromSearch?.invoke(q)
+                }
             })
             isActive = true
         }

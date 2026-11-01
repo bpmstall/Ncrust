@@ -43,4 +43,21 @@ object PlaybackQueueLogic {
         val pos = shuffledIndices.indexOf(mappedIndex)
         return if (pos >= 0) pos else fallbackPosition.coerceIn(0, shuffledIndices.size - 1)
     }
+
+    /**
+     * 从队列里删掉 [removedIndex] 之后，当前播放项应该落在的新游标。
+     *
+     * 语义与「playbackQueue[currentIndex] ≡ 正在播放的曲目」这条不变量绑定：
+     * - 删的是游标之前的项：正在播的歌整体左移一格，游标必须跟着 -1，否则会指向下一首；
+     * - 删的就是当前项：音频不会跟着队列走（播放器仍持有这一首），游标原地落到"下一首"，
+     *   由调用方决定续播还是停在末尾；
+     * - 删的是游标之后的项：游标不变，只夹到新长度；
+     * - 队列被删空：-1（没有正在播放的曲目可指）。
+     */
+    fun indexAfterRemoval(currentIndex: Int, removedIndex: Int, newSize: Int): Int {
+        if (newSize <= 0) return -1
+        if (currentIndex < 0) return currentIndex
+        val shifted = if (removedIndex < currentIndex) currentIndex - 1 else currentIndex
+        return shifted.coerceIn(0, newSize - 1)
+    }
 }

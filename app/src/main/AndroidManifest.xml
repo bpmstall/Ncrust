@@ -85,6 +85,11 @@
                      android.media.browse.MediaBrowserService 发现媒体应用。
                      media3 MediaSessionService.onBind 已处理该 action。 -->
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <!-- 车机/蓝牙耳机「说出歌名开始播放」的语音搜索入口：系统把解析后的
+                     查询串经该 action 送达本服务，由 MediaSessionCompat.Callback
+                     的 onPlayFromSearch 接收（见 PlaybackService）。
+                     缺这条 filter 时 lint 会判 MissingIntentFilterForMediaSearch。 -->
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
             </intent-filter>
             <!-- Android Automotive 的 media source opt-in：Media Center 的
                  MediaSource 只收录带此 meta-data 的“media template app”，

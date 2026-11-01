@@ -8,6 +8,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.takahashirinta.ncrust.network.SongItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -164,6 +165,12 @@ object PlaybackStateManager {
                     .putString(KEY_SESSION, json)
                     .apply()
             }
+        } catch (e: CancellationException) {
+            // 必须重抛。saveSession 用 flushJob?.cancel() 抢占上一次待写任务，取消会以
+            // CancellationException 的形式从 withContext 里抛出——它也是 Exception 的子类，
+            // 若落进下面那支当"序列化失败"处理，就会 clearSession 把磁盘上已保存的有效会话
+            // 一并删掉（新变更丢了，旧会话也没了）。
+            throw e
         } catch (_: Exception) {
             clearSession(ctx)
         }

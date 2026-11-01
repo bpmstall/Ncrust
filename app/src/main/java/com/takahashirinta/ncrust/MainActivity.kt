@@ -470,9 +470,12 @@ fun MainScreen(
     }
 
     fun removeFromQueue(index: Int) {
+        if (index !in playbackQueue.indices) return
         playbackQueue.removeAt(index)
-        if (currentQueueIndex >= playbackQueue.size) currentQueueIndex = playbackQueue.size - 1
-        if (playbackQueue.isEmpty()) currentQueueIndex = -1
+        // 游标修正走纯函数（PlaybackQueueLogic.indexAfterRemoval）：删掉游标之前的项时
+        // 正在播的歌会整体左移一格，索引不跟着 -1 就会变成"队列指向下一首、音频还在放当前首"。
+        currentQueueIndex =
+            PlaybackQueueLogic.indexAfterRemoval(currentQueueIndex, index, playbackQueue.size)
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
     }
@@ -496,6 +499,13 @@ fun MainScreen(
     fun playFromQueue(index: Int) {
         if (index in playbackQueue.indices) {
             currentQueueIndex = index
+            // 乱序模式下必须把随机游标对齐到点选的这一首：游标停在旧位置的话，
+            // 点选曲播完会按旧序列的"下一首"接走（漏播/重播），currentQueueIndex
+            // 与 shuffledIndices 就此脱钩。
+            if (playMode == QueueModes.SHUFFLE) {
+                val pos = shuffledIndices.indexOf(index)
+                if (pos >= 0) shuffledPosition = pos else generateShuffledIndices()
+            }
             val song = playbackQueue[index]
             val (title, artist, artwork) = songParams(song)
             playerViewModel.playSong(song.id, title = title, artist = artist, artworkUrl = artwork)
@@ -609,13 +619,13 @@ fun MainScreen(
                 }
             }
             QueueModes.LINE -> {
-                // 顺序线性：队列尾自然结束后不再循环, 定位到首曲(不自动续播)
+                // 顺序线性：队列尾自然结束后不再续播, 停在最后一首。
                 if (activeIndex < playbackQueue.size - 1) {
                     playFromQueue(activeIndex + 1)
                 } else {
-                    currentQueueIndex = 0
-                    currentSong = playbackQueue.firstOrNull()
-                    persistSession()
+                    // 只暂停，绝不动游标与 currentSong：ExoPlayer 里载入的仍是队尾那一首，
+                    // 把游标挪到队首会让 UI 高亮/落盘索引都指向首曲而音频是队尾曲，
+                    // 再点播放还会 resume 队尾歌（UI 与音频长期不一致）。
                     playerViewModel.pausePlayback()
                 }
             }
@@ -668,12 +678,26 @@ fun MainScreen(
         }
     }
 
+    // 连续「取不到可播 URL」的跳歌计数。整队列都不可播时（登录过期 / 无会员 / 全部下架），
+    // onUnplayable→playNext 会无限环绕、每轮还附带最多 6 次逐档取链请求。
+    // 累计到队列长度就停止续跳并暂停，把决定权交还用户；成功播放时清零。
+    val unplayableStreak = remember { mutableIntStateOf(0) }
+
     // 设置播放器回调。
     LaunchedEffect(Unit) {
         playerViewModel.setOnSongPreviousCallback { playPrevious() }
         playerViewModel.setOnSongEndedCallback { songEnded = true }
         playerViewModel.setOnSongTransitionedCallback { songTransitioned = true }
-        playerViewModel.setOnUnplayableCallback { playNext() }
+        playerViewModel.setOnUnplayableCallback {
+            // 先自增再判断：队列 N 首时第 N 次失败即停，不会多空转一轮。
+            unplayableStreak.intValue++
+            if (unplayableStreak.intValue >= playbackQueue.size.coerceAtLeast(1)) {
+                // 队列里每一首都试过一遍仍无可播 URL：暂停并停止续跳。
+                playerViewModel.pausePlayback()
+            } else {
+                playNext()
+            }
+        }
     }
 
     // 无缝播放：当进入当前歌曲的最后 20 秒时，预取下一首的 URL 并加入 ExoPlayer 队列。
@@ -770,6 +794,9 @@ fun MainScreen(
 
         currentQueueIndex = nextIndex
         currentSong = playbackQueue.getOrNull(nextIndex)
+        // 真的切到了一首新歌，说明这一轮续跳是成功的：把"连续不可播"计数清零。
+        // 不在这里清零的话，用户偶尔点一次没版权的歌就会累积到熔断阈值。
+        unplayableStreak.intValue = 0
         persistSession()
         currentSong?.id?.let { playerViewModel.fetchLyricsForSong(it) }
 
@@ -836,7 +863,10 @@ fun MainScreen(
     fun playSongItem(song: SongItem) {
         // 单曲直接播放 → 插到当前播放的下一首并立即播放（不再是"排到队尾"）。
         // 队列未在播放（空/无当前曲）时, 该曲作为唯一一首。
-        val isQueued = playbackQueue.isNotEmpty() && currentQueueIndex in playbackQueue.indices
+        // 必须同时校验 currentSong != null：队列里只剩"待播"项（如刚 addToQueue 过）时
+        // currentQueueIndex 可能已经指向某项，但并没有歌在响，不能据此走"插到下一首"分支。
+        val isQueued = currentSong != null &&
+            playbackQueue.isNotEmpty() && currentQueueIndex in playbackQueue.indices
         if (!isQueued) {
             playbackQueue.clear(); playbackQueue.add(song)
             currentQueueIndex = 0
@@ -865,6 +895,24 @@ fun MainScreen(
         expandCard()
     }
 
+    // 语音搜索（Android Auto / 蓝牙媒体按键的 "play <query>"）：
+    // 搜到单曲后走 playSongItem，与界面里点一首歌的语义完全一致（插到当前播放的
+    // 下一位并立即播），队列不变量由它自己维护——service 侧只负责把 query 转出来。
+    // 注册在 playSongItem 之后：Kotlin 的局部函数必须声明在前才能被引用。
+    LaunchedEffect(Unit) {
+        playerViewModel.setOnPlayFromSearchCallback { q ->
+            coroutineScope.launch(Dispatchers.IO) {
+                val songs = runCatching {
+                    RetrofitClient.api.search(keyword = q, type = 1).result?.songs
+                }.getOrNull().orEmpty()
+                val best = songs.firstOrNull()
+                if (best != null) {
+                    withContext(Dispatchers.Main) { playSongItem(best) }
+                }
+            }
+        }
+    }
+
     fun insertNext(song: SongItem) {
         // 关键不变量：playbackQueue[currentQueueIndex] 必须始终等于当前正在播的歌。
         // 直接 .filter 会把当前歌之前的重复项也删掉，让 currentQueueIndex 指错下一项——
@@ -878,7 +926,8 @@ fun MainScreen(
         val insertPos = (newCurrentIndex + 1).coerceIn(0, filtered.size)
         filtered.add(insertPos, song)
         playbackQueue.clear(); playbackQueue.addAll(filtered)
-        currentQueueIndex = if (newCurrentIndex < 0) 0 else newCurrentIndex
+        // 没有在播歌时保持 -1：置 0 会让 playSongItem 的 isQueued 误判成"队列在播"。
+        currentQueueIndex = newCurrentIndex
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
     }
@@ -888,18 +937,24 @@ fun MainScreen(
         if (song.id == currentId) return
         playbackQueue.removeAll { it.id == song.id }
         playbackQueue.add(song)
+        // 尾追加不动游标；没有在播歌时保持 -1（理由同 insertNext）。
         currentQueueIndex = if (currentId != null)
             playbackQueue.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
-        else 0
+        else -1
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         persistSession()
     }
 
     fun replaceQueueAndPlay(songs: List<SongItem>) {
         if (songs.isEmpty()) return
+        // 队列内绝不能有重复 id：resolveCurrentIndex / activeIndex 的 indexOfFirst 只认
+        // 第一个重复项，会把索引指到错的那一首；QueueView 的行 key 虽然已带下标兜底，
+        // 但队列本身重复仍然会让「上一首/下一首」在重复项之间来回跳。
+        val deduped = songs.distinctBy { it.id }
+        if (deduped.isEmpty()) return
         fmMode = false
         heartbeatPlaylistId = null
-        playbackQueue.clear(); playbackQueue.addAll(songs)
+        playbackQueue.clear(); playbackQueue.addAll(deduped)
         currentQueueIndex = 0
         if (playMode == QueueModes.SHUFFLE) generateShuffledIndices()
         playFromQueue(0)
