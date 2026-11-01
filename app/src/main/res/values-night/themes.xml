@@ -3,7 +3,9 @@
     <style name="Base.Theme.Ncrust" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/ic_launcher_background</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
+        <!-- API 27（8.1）才引入该属性；API 24–26 的平台会直接忽略它，
+             不会崩也不会改变外观，显式声明 targetApi 只为消掉 lint 的 NewApi 误报。 -->
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
