@@ -89,6 +89,10 @@ class SearchViewModel : ViewModel() {
     }
 
     fun clearQuery() {
+        // 必须取消排队的防抖任务：否则"输入后 500ms 内点清除"时，挂起的 job 仍会以空 keyword
+        // 再发一轮请求并写回 _songs/_albums/_artists，把刚清空的结果又填一遍（脏状态）。
+        searchJob?.cancel()
+        searchJob = null
         _query.value = ""
         clearResults()
     }

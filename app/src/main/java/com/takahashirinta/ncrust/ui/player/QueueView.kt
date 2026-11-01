@@ -508,6 +508,14 @@ private enum class RowKind { PAST_HEAD, NOW_HEAD, UPCOMING_HEAD, SONG, INFINITY 
 
 private data class RowInfo(val kind: RowKind, val queueIndex: Int, val key: String)
 
+/**
+ * 行 key 必须"位置稳定"而不能只用歌曲 id：
+ * 队列的去重依赖每一条变异路径(replaceQueueAndPlay/insertNext/appendToQueue/insertAllNext…)
+ * 各自先去重,而 moveInQueue 这种纯移动、以及外部直接灌入的列表(剪贴板/云端详情)都不保证唯一。
+ * 一旦队列里出现重复 id,`"s-${id}"` 会生成重复 key,LazyColumn 直接抛
+ * IllegalArgumentException 崩溃。加上队列下标后,key 在同一次渲染内必然唯一;
+ * 下标只在增删/重排时变化,而这些操作本来就伴随列表内容变化,行身份跟随下标重建是正确语义。
+ */
 private fun buildQueueRows(
     queue: List<SongItem>,
     currentIndex: Int,
@@ -519,13 +527,13 @@ private fun buildQueueRows(
 
     if (cur > 0) {
         rows += RowInfo(RowKind.PAST_HEAD, -1, "h-past")
-        for (i in 0 until cur) rows += RowInfo(RowKind.SONG, i, "s-${queue[i].id}")
+        for (i in 0 until cur) rows += RowInfo(RowKind.SONG, i, "s-${queue[i].id}-$i")
     }
     rows += RowInfo(RowKind.NOW_HEAD, cur, "h-now")
-    rows += RowInfo(RowKind.SONG, cur, "s-${queue[cur].id}")
+    rows += RowInfo(RowKind.SONG, cur, "s-${queue[cur].id}-$cur")
     if (cur < queue.size - 1 || infinityActive) {
         rows += RowInfo(RowKind.UPCOMING_HEAD, -1, "h-upcoming")
-        for (i in (cur + 1) until queue.size) rows += RowInfo(RowKind.SONG, i, "s-${queue[i].id}")
+        for (i in (cur + 1) until queue.size) rows += RowInfo(RowKind.SONG, i, "s-${queue[i].id}-$i")
         if (infinityActive) rows += RowInfo(RowKind.INFINITY, -1, "infinity")
     }
     return rows

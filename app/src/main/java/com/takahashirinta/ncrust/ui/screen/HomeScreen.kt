@@ -152,7 +152,15 @@ fun HomeScreen(
         if (recentSongs.isEmpty()) {
             savedSongs = LibraryManager.getSavedSongs(context).take(RECENT_SONGS_LIMIT)
         }
-        if (ContentCache.isHomeFresh()) {
+        // 只信"时间戳新鲜"不够：缓存可能刚被 clearAll 清空(或预热失败只 markHomeWarmed 没写数据),
+        // 此时提前返回会让页面停在空网格(既不显示 loader 也不会重试)。必须同时要求真的有数据。
+        // 两个来源都查：本屏 state(组合时从 ContentCache 取的初始值)与 ContentCache 现况
+        // (预热可能在本屏组合之后才把数据写进来)。
+        val cachedDaily =
+            dailySongs.isNotEmpty() || ContentCache.homeDailySongs?.isNotEmpty() == true
+        val cachedPlaylists =
+            playlists.isNotEmpty() || ContentCache.homeRecommendPlaylists?.isNotEmpty() == true
+        if (ContentCache.isHomeFresh() && (cachedDaily || cachedPlaylists)) {
             isLoading = false
             return@LaunchedEffect
         }

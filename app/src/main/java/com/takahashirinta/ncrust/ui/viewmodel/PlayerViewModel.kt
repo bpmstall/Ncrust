@@ -66,6 +66,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var onSongPreviousCallback: (() -> Unit)? = null
     private var onSongTransitionedCallback: (() -> Unit)? = null
     private var onUnplayableCallback: (() -> Unit)? = null
+    // Android Auto / 语音搜索: 用户在车机上"播放某首歌"时, 由 MainActivity 接到队列并开播。
+    private var onPlayFromSearchCallback: ((String) -> Unit)? = null
     private var playJob: Job? = null
     private var preloadJob: Job? = null
 
@@ -118,9 +120,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val requestedLevel: String,
         val timestamp: Long = System.currentTimeMillis()
     )
-    private val preloadCache = mutableMapOf<Long, PreloadCacheEntry>()
+    // ConcurrentHashMap: 取链在 Dispatchers.IO 写, 主线程在读, 普通 mutableMapOf 并发读写
+    // 会破坏内部结构(HashMap 并发 put 可能死循环/丢数据)。全程只按 key 查表, 无遍历/无顺序依赖,
+    // 换成并发实现语义等价。
+    private val preloadCache = java.util.concurrent.ConcurrentHashMap<Long, PreloadCacheEntry>()
     private val CACHE_TTL_MS = 5 * 60 * 1_000L
     // Prevents duplicate preload launches for the same song while one is in flight.
+    // @Volatile: IO 线程写、主线程读, 需要可见性保证(否则主线程可能读到陈旧的 -1 而重复预载)。
+    @Volatile
     private var currentlyPreloadingSongId = -1L
 
     init {
@@ -265,6 +272,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun setOnSongPreviousCallback(callback: () -> Unit) { onSongPreviousCallback = callback }
     fun setOnSongTransitionedCallback(callback: () -> Unit) { onSongTransitionedCallback = callback }
     fun setOnUnplayableCallback(callback: () -> Unit) { onUnplayableCallback = callback }
+    /** Android Auto 语音搜索: PlaybackService 收到 onPlayFromSearch 时回调, query 为搜索词。 */
+    fun setOnPlayFromSearchCallback(cb: ((String) -> Unit)?) { onPlayFromSearchCallback = cb }
 
     /**
      * 切歌时立即清空旧歌词并置加载态。
@@ -778,6 +787,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         PlaybackService.onSongTransitioned = null
         PlaybackService.onBufferingChanged = null
         PlaybackService.onPlaybackError = null
+        onPlayFromSearchCallback = null
         super.onCleared()
     }
 }

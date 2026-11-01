@@ -3,7 +3,7 @@ package com.takahashirinta.ncrust.ui.player
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
-import androidx.compose.animation.Crossfade
+import android.os.Build
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.Image
@@ -163,7 +163,12 @@ fun PlayerCard(
     LaunchedEffect(ambientBitmap) {
         val bitmap = ambientBitmap ?: return@LaunchedEffect
         ambientColor = withContext(Dispatchers.Default) {
-            val readable = if (bitmap.config == Bitmap.Config.HARDWARE) {
+            // Bitmap.Config.HARDWARE 是 API 26 才加入的枚举常量, minSdk 24 上连"读取"这个
+            // 静态字段都会抛 NoSuchFieldError(与 config 实际取值无关, 短路求值也救不了),
+            // 因此必须先用 SDK_INT 守卫, 低版本一律走原图。
+            val readable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                bitmap.config == Bitmap.Config.HARDWARE
+            ) {
                 bitmap.copy(Bitmap.Config.ARGB_8888, false)
             } else {
                 bitmap
@@ -695,50 +700,49 @@ fun PlayerCard(
                                     .weight(1f)
                                     .fillMaxWidth()
                             ) {
-                                // 切歌时旧歌词渐隐、新歌词渐显（Sokuou UWP 缓动）。
-                                // key = song?.id：同一首歌的歌词更新不触发 Crossfade, 只换内容。
-                                Crossfade(
-                                    targetState = song?.id,
-                                    animationSpec = SokuouTweens.CoverFade,
-                                    label = "LyricsCrossfade"
-                                ) { _ ->
-                                    val isBuffering by playerViewModel.isBuffering.collectAsState()
-                                    val fontSizeIdx = remember { prefs.getInt("lyrics_font_size", 1) }
-                                    val fontSize = when (fontSizeIdx) {
-                                        0 -> 22.sp
-                                        1 -> 26.sp
-                                        2 -> 30.sp
-                                        3 -> 34.sp
-                                        else -> 26.sp
-                                    }
-                                    val lineHeight = when (fontSizeIdx) {
-                                        0 -> 30.sp
-                                        1 -> 36.sp
-                                        2 -> 42.sp
-                                        3 -> 48.sp
-                                        else -> 36.sp
-                                    }
-                                    val centerAligned = remember { prefs.getBoolean("lyrics_align_center", false) }
-                                    LyricsView(
-                                        songId = song?.id ?: -1L,
-                                        lyrics = lyrics,
-                                        translatedLyrics = translatedLyrics,
-                                        showTranslation = showLyricsTranslation,
-                                        positionFlow = playerViewModel.positionStateMs,
-                                        isPlaying = isPlaying,
-                                        isBuffering = isBuffering,
-                                        isVisible = true,
-                                        forcedLocateTrigger = lyricLocateTrigger,
-                                        onSeekToMs = { ms -> playerViewModel.seekTo(ms) },
-                                        enabled = lyricsEnabled && cardExpandedForInput,
-                                        onUserScrolled = {},
-                                        isLoading = lyricsLoading,
-                                        fontSize = fontSize,
-                                        lineHeight = lineHeight,
-                                        centerAligned = centerAligned,
-                                        onBackgroundClick = { showLyrics = false },
-                                    )
+                                // 这里曾经用 Crossfade(targetState = song?.id) 做"旧词淡出/新词淡入"。
+                                // 但它拿不到旧歌词：resetLyricsForNewSong 在切歌瞬间就把外层 lyrics
+                                // 清空了，两层 lambda 读的都是同一个 lyrics State（先空、后新），
+                                // 于是过渡期两层渲染的是同一份数据 —— 既没有渐变效果，又短暂多合成
+                                // 一层全屏 LyricsView(内含 LazyColumn)，纯 GPU 浪费（低端机上掉帧）。
+                                // 真正的歌词切换观感由 lyricAnimProgress 的面板淡出 + 大封面覆盖提供，
+                                // 因此去掉 Crossfade，只保留单层，同时消除 lint 的未使用 targetState 告警。
+                                val isBuffering by playerViewModel.isBuffering.collectAsState()
+                                val fontSizeIdx = remember { prefs.getInt("lyrics_font_size", 1) }
+                                val fontSize = when (fontSizeIdx) {
+                                    0 -> 22.sp
+                                    1 -> 26.sp
+                                    2 -> 30.sp
+                                    3 -> 34.sp
+                                    else -> 26.sp
                                 }
+                                val lineHeight = when (fontSizeIdx) {
+                                    0 -> 30.sp
+                                    1 -> 36.sp
+                                    2 -> 42.sp
+                                    3 -> 48.sp
+                                    else -> 36.sp
+                                }
+                                val centerAligned = remember { prefs.getBoolean("lyrics_align_center", false) }
+                                LyricsView(
+                                    songId = song?.id ?: -1L,
+                                    lyrics = lyrics,
+                                    translatedLyrics = translatedLyrics,
+                                    showTranslation = showLyricsTranslation,
+                                    positionFlow = playerViewModel.positionStateMs,
+                                    isPlaying = isPlaying,
+                                    isBuffering = isBuffering,
+                                    isVisible = true,
+                                    forcedLocateTrigger = lyricLocateTrigger,
+                                    onSeekToMs = { ms -> playerViewModel.seekTo(ms) },
+                                    enabled = lyricsEnabled && cardExpandedForInput,
+                                    onUserScrolled = {},
+                                    isLoading = lyricsLoading,
+                                    fontSize = fontSize,
+                                    lineHeight = lineHeight,
+                                    centerAligned = centerAligned,
+                                    onBackgroundClick = { showLyrics = false },
+                                )
                             }
                         }
 
