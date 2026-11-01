@@ -639,7 +639,9 @@ fun PlayerCard(
                         },
                         lyricsUnavailable = lyricsUnavailable,
                         previousEnabled = playMode != QueueModes.INFINITY || currentQueueIndex > 0,
-                        compact = false,
+                        // 歌词·队列面板滑出时收紧控制栏，给歌词留视野。这是 de764eb 接通过的既有功能，
+                        // 7c5089a 把它回退成了恒 false（设置页开关随之变成摆设），这里恢复条件式。
+                        compact = (showLyrics || showQueue) && prefs.getBoolean("lyrics_compact_controls", true),
                         landscape = isWidePlayer
                     )
                 }

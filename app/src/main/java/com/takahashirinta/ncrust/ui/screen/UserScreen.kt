@@ -115,16 +115,15 @@ fun UserScreen(
     val playerViewModel: PlayerViewModel = viewModel()
     var wifiQuality by remember { mutableIntStateOf(prefs.getInt("wifi_quality", 3)) }
     var mobileQuality by remember { mutableIntStateOf(prefs.getInt("mobile_quality", 1)) }
-    var lowPowerMode by remember { mutableStateOf(prefs.getBoolean("low_power_mode", false)) }
     var gaplessEnabled by remember { mutableStateOf(prefs.getBoolean("gapless_playback", true)) }
     var lyricsTranslation by remember { mutableStateOf(prefs.getBoolean("lyrics_translation", true)) }
     var lyricsFontSize by remember { mutableIntStateOf(prefs.getInt("lyrics_font_size", 1)) }
     var lyricsAlignCenter by remember { mutableStateOf(prefs.getBoolean("lyrics_align_center", false)) }
     var lyricsCompactControls by remember { mutableStateOf(prefs.getBoolean("lyrics_compact_controls", true)) }
     var dynamicArtworkBackground by remember { mutableStateOf(prefs.getBoolean("dynamic_artwork_background", true)) }
-    var modernRoundedCorners by remember { mutableStateOf(prefs.getBoolean("modern_rounded_corners", true)) }
-    var hapticFeedback by remember { mutableStateOf(prefs.getBoolean("haptic_feedback", true)) }
-    var lyricsKeepScreenOn by remember { mutableStateOf(prefs.getBoolean("lyrics_keep_screen_on", false)) }
+    // 以下四个设置项当前没有接入任何消费点，UI 入口已隐藏（见「视觉与性能」卡片注释）：
+    // low_power_mode / modern_rounded_corners / haptic_feedback / lyrics_keep_screen_on。
+    // prefs 里的存量键一律保留不清理，避免升级后「用户的设置被悄悄重置」；实现后恢复读取与入口即可。
 
     var selectedLanguageCode by remember { mutableStateOf(getSavedLanguageCode(context)) }
 
@@ -359,15 +358,8 @@ fun UserScreen(
                         prefs.edit().putBoolean("lyrics_compact_controls", it).apply()
                     }
                 )
-                CardDivider()
-                SettingSwitchRow(
-                    title = "看歌词时屏幕常亮",
-                    checked = lyricsKeepScreenOn,
-                    onCheckedChange = {
-                        lyricsKeepScreenOn = it
-                        prefs.edit().putBoolean("lyrics_keep_screen_on", it).apply()
-                    }
-                )
+                // 「看歌词时屏幕常亮」(lyrics_keep_screen_on) 尚未接入任何消费点，暂时隐藏；
+                // prefs 键与存量值保留，待实现后用 SettingSwitchRow 恢复入口。
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -376,16 +368,8 @@ fun UserScreen(
         item {
             SectionHeader(AppIcons.Visual, "视觉与性能")
             SettingsCard {
-                SettingSwitchRow(
-                    title = strings.lowPowerModeTitle,
-                    description = strings.lowPowerModeDesc,
-                    checked = lowPowerMode,
-                    onCheckedChange = {
-                        lowPowerMode = it
-                        prefs.edit().putBoolean("low_power_mode", it).apply()
-                    }
-                )
-                CardDivider()
+                // 「性能与低功耗模式」(low_power_mode) 尚未接入任何消费点，暂时隐藏；
+                // prefs 键与存量值保留，待实现后用 SettingSwitchRow 恢复入口。
                 SettingSwitchRow(
                     title = "动态封面氛围模糊背景",
                     description = "从当前歌曲封面提取色彩与柔和高斯模糊，在全屏播放器背景渲染",
@@ -395,26 +379,10 @@ fun UserScreen(
                         prefs.edit().putBoolean("dynamic_artwork_background", it).apply()
                     }
                 )
-                CardDivider()
-                SettingSwitchRow(
-                    title = "Fluent Design 质感小圆角与微边框",
-                    description = "卡片与封面采用 8dp/6dp 小圆角，叠加 0.75dp 半透明微边框描边提升层次质感",
-                    checked = modernRoundedCorners,
-                    onCheckedChange = {
-                        modernRoundedCorners = it
-                        prefs.edit().putBoolean("modern_rounded_corners", it).apply()
-                    }
-                )
-                CardDivider()
-                SettingSwitchRow(
-                    title = "触觉轻震反馈",
-                    description = "播放、暂停、切歌与模式切换时提供轻微触觉反馈",
-                    checked = hapticFeedback,
-                    onCheckedChange = {
-                        hapticFeedback = it
-                        prefs.edit().putBoolean("haptic_feedback", it).apply()
-                    }
-                )
+                // 「Fluent Design 质感小圆角与微边框」(modern_rounded_corners) 与
+                // 「触觉轻震反馈」(haptic_feedback) 目前都尚未接入任何消费点，入口暂时隐藏；
+                // 其中前者还与 Kanesumi 直角规范冲突。prefs 键与存量值一律保留不清理，
+                // 待实现后用 SettingSwitchRow 恢复入口（届时需补回上方的 CardDivider）。
             }
             Spacer(Modifier.height(14.dp))
         }
