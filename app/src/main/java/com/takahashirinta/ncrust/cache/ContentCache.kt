@@ -1,6 +1,6 @@
 package com.takahashirinta.ncrust.cache
 
-import androidx.collection.LruCache
+import android.util.LruCache
 import com.takahashirinta.ncrust.network.PlaylistApi
 import com.takahashirinta.ncrust.network.SongItem
 import com.takahashirinta.ncrust.network.model.AlbumDetailResponse
@@ -37,18 +37,21 @@ object ContentCache {
         homeWarmedUpAt > 0L && System.currentTimeMillis() - homeWarmedUpAt < ttlMs
 
     // ── 详情页（按 ID 缓存，LRU 32 项封顶） ──────────────────────────
+    // 用 android.util.LruCache（内部所有方法 synchronized）而不是 androidx.collection.LruCache
+    // （后者文档明确 non-thread-safe）：get 在主线程的 remember{} 里，put 在详情页的 IO 请求回调里，
+    // clearAll 又会被 onTrimMemory 在主线程调用，三者会真的并发撞上同一张表。
     private val albumCache = LruCache<Long, AlbumDetailResponse>(32)
     private val playlistCache = LruCache<Long, List<SongItem>>(32)
     private val artistCache = LruCache<Long, ArtistAlbumsResponse>(32)
 
-    fun getAlbum(id: Long): AlbumDetailResponse? = albumCache[id]
+    fun getAlbum(id: Long): AlbumDetailResponse? = albumCache.get(id)
     fun putAlbum(id: Long, data: AlbumDetailResponse) { albumCache.put(id, data) }
 
-    fun getPlaylistSongs(id: Long): List<SongItem>? = playlistCache[id]
+    fun getPlaylistSongs(id: Long): List<SongItem>? = playlistCache.get(id)
     fun putPlaylistSongs(id: Long, data: List<SongItem>) { playlistCache.put(id, data) }
     fun evictPlaylist(id: Long) { playlistCache.remove(id) }
 
-    fun getArtistAlbums(id: Long): ArtistAlbumsResponse? = artistCache[id]
+    fun getArtistAlbums(id: Long): ArtistAlbumsResponse? = artistCache.get(id)
     fun putArtistAlbums(id: Long, data: ArtistAlbumsResponse) { artistCache.put(id, data) }
 
     // ── 用户 ─────────────────────────────────────────────────────────
@@ -59,6 +62,9 @@ object ContentCache {
     fun clearAll() {
         homeDailySongs = null
         homeRecommendPlaylists = null
+        // 必须连"新鲜度戳"一起归零：否则清空后的 15 秒窗口内 isHomeFresh() 仍为 true，
+        // HomeScreen 会据此跳过自己的请求，页面只剩下空网格（既无 loader 也不会重试）。
+        homeWarmedUpAt = 0L
         albumCache.evictAll()
         playlistCache.evictAll()
         artistCache.evictAll()

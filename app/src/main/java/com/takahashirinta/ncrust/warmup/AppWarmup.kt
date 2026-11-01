@@ -51,7 +51,8 @@ object AppWarmup {
         "ncrust_library",         // LibraryManager
         "ncrust_playback_state",  // PlaybackStateManager
         "ncrust_lyrics_cache",    // LyricsCache
-        "search_history"          // SearchHistoryManager
+        "search_history",         // SearchHistoryManager
+        "play_history"            // PlayHistoryManager
     )
 
     fun start(context: Context) {
@@ -86,7 +87,12 @@ object AppWarmup {
                     plsDeferred.await()?.let { ContentCache.homeRecommendPlaylists = it }
                 }
                 // 标记首页数据已预热：HomeScreen 进屏时据此跳过重复请求。
-                ContentCache.markHomeWarmed()
+                // 只有真的拿到数据才打这个标记——断网/接口失败时两个 await 都是 null，
+                // 若照样标记，HomeScreen 会把"空缓存"当"刚预热过"从而既不再拉数据
+                // 也不显示 loader，首页退化成一片空白网格。
+                if (!ContentCache.homeDailySongs.isNullOrEmpty() || !ContentCache.homeRecommendPlaylists.isNullOrEmpty()) {
+                    ContentCache.markHomeWarmed()
+                }
 
                 // 阶段一·五：封面预取到 Coil 全局 ImageLoader 的内存+磁盘缓存。
                 // 必须紧跟在 Home 数据之后、其他网络任务之前——首页首帧的 AsyncImage

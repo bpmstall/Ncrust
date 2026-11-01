@@ -21,6 +21,9 @@ object RetrofitClient {
     private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     private const val IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
 
+    // 登录/登出在主线程写，CookieInterceptor 在 OkHttp 的 IO 线程读；两者之间没有
+    // happens-before 边，不加 @Volatile 时可能读到过期旧值（表现为刚登录后个别请求仍不带 Cookie）。
+    @Volatile
     private var currentCookie: String? = null
 
     fun init(context: Context) {

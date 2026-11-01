@@ -272,6 +272,8 @@ object LibraryManager {
             if (added) songs.add(0, song)
         }
         if (added) {
+            // 底表一起改：分页游标是按底表算的，只动 cachedSongs 会把边界算歪。
+            syncLikedIdsAdded(song.id)
             scheduleFlush(context)
             if (isLoggedIn(context)) pushLike(context, song.id, true)
         }
@@ -289,6 +291,7 @@ object LibraryManager {
             }
         }
         if (added.isNotEmpty()) {
+            added.forEach { syncLikedIdsAdded(it.id) }
             scheduleFlush(context)
             if (isLoggedIn(context)) added.forEach { pushLike(context, it.id, true) }
         }
@@ -302,6 +305,8 @@ object LibraryManager {
             removed = songs.removeAll { it.id == songId }
         }
         if (removed) {
+            // 底表同步移除，否则这首歌会以"底表里有、缓存里没有"的身份被分页重新拉回来。
+            syncLikedIdsRemoved(songId)
             scheduleFlush(context)
             if (isLoggedIn(context)) pushLike(context, songId, false)
         }
@@ -457,10 +462,17 @@ object LibraryManager {
      */
     suspend fun loadMoreLikedSongs(context: Context): List<SongItem> = withContext(Dispatchers.IO) {
         val allIds = ensureLikedIdsLoaded(context)
-        val loaded = synchronized(songsLock) { cachedSongs?.size ?: 0 }
-        if (allIds.isEmpty() || loaded >= allIds.size) return@withContext emptyList()
-        val sliceEnd = minOf(loaded + LIKED_BATCH_SIZE, allIds.size)
-        val slice = allIds.subList(loaded, sliceEnd)
+        // 偏移不能用 cachedSongs.size：本地缓存里既有"底表里还没加载的"、也可能有
+        // "底表里根本没有的"（本地点赞刚插到队头的歌）与"底表里有但已被本地取消的"，
+        // 三者让 size 与底表下标错位——点赞一次就永久跳过一首，取消一次则触底空转。
+        // 正确的游标是"底表中第一首尚未加载的歌"。
+        val loadedCount = synchronized(songsLock) {
+            val have: Set<Long> = cachedSongs?.mapTo(HashSet<Long>()) { it.id } ?: emptySet()
+            allIds.indexOfFirst { it !in have }.let { if (it < 0) allIds.size else it }
+        }
+        if (allIds.isEmpty() || loadedCount >= allIds.size) return@withContext emptyList()
+        val sliceEnd = minOf(loadedCount + LIKED_BATCH_SIZE, allIds.size)
+        val slice = allIds.subList(loadedCount, sliceEnd)
         val fetched = try { PlaylistApi.getSongsByIds(slice) } catch (e: Exception) {
             Log.e(TAG, "loadMoreLikedSongs failed: ${e.message}")
             return@withContext emptyList()
@@ -471,6 +483,29 @@ object LibraryManager {
             for (s in fetched) if (s.id !in seen) songs.add(s)
             songs.toList()
         }.also { scheduleFlush(context) }
+    }
+
+    /**
+     * 底表（红心歌单 id 列表）与 cachedSongs 的双向同步：底表是分页"哪些还没加载"的依据，
+     * 只改 cachedSongs 会让边界漂移（取消收藏的歌随后又被当成未加载项拉回来）。
+     * 仅在底表已载入内存时才同步——本方法由 UI 线程上的 saveSong/removeSong 调用，
+     * 不能在这里触发 getSharedPreferences 读盘。
+     */
+    private fun syncLikedIdsAdded(songId: Long) {
+        synchronized(idsLock) {
+            val current = cachedLikedIds ?: return
+            if (songId in current) return
+            // 与 songs.add(0, ...) 同序：新收藏的歌排在最前，和红心歌单"最新在前"一致。
+            cachedLikedIds = listOf(songId) + current
+        }
+    }
+
+    private fun syncLikedIdsRemoved(songId: Long) {
+        synchronized(idsLock) {
+            val current = cachedLikedIds ?: return
+            if (songId !in current) return
+            cachedLikedIds = current.filterNot { it == songId }
+        }
     }
 
     private const val TAG = "LibraryManager"

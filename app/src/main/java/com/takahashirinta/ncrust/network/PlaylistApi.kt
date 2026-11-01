@@ -725,7 +725,12 @@ object PlaylistApi {
             Log.w("PlaylistApi", "likeSong(eapi) id=$songId like=$like http=${http.code} no body elapsedMs=$elapsed")
             return -1
         }
-        val plain = EapiCrypto.decryptResponse(java.util.Base64.getEncoder().encodeToString(raw))
+        // java.util.Base64 是 API 26+，minSdk 24 的 7.0/7.1 会 NoClassDefFoundError；
+        // 改用 android.util.Base64，编码参数 NO_WRAP 与 WeapiCrypto 的编码端保持一致
+        // （不写换行，避免把 "\n" 塞进待解密的字符串）。
+        val plain = EapiCrypto.decryptResponse(
+            android.util.Base64.encodeToString(raw, android.util.Base64.NO_WRAP)
+        )
         val jsonText = plain.ifEmpty { String(raw) }
         var code = -1
         var parseOk = false
@@ -908,11 +913,17 @@ object PlaylistApi {
             val nameResp = RetrofitClient.weapiPost("/api/playlist/update/name", namePayload)
             val nameOk = runCatching { JSONObject(nameResp.body?.string().orEmpty()).optInt("code", -1) == 200 }.getOrDefault(false)
 
+            // 描述分支必须消费响应体：OkHttp 的 body 不读完就不算释放连接（会一直占着连接
+            // 直到 GC，日志里就是那句 "A connection ... was leaked"）。同时它的业务码也得参与
+            // 返回值——以前直接丢弃响应，描述更新失败也会被当成整体成功。
+            // 「无描述可更新」时视为该步无需执行（true），与名称分支同样的 code==200 判定。
+            var descOk = true
             if (desc.isNotEmpty()) {
                 val descPayload = JSONObject().put("id", playlistId).put("desc", desc).toString()
-                RetrofitClient.weapiPost("/api/playlist/desc/update", descPayload)
+                val descResp = RetrofitClient.weapiPost("/api/playlist/desc/update", descPayload)
+                descOk = runCatching { JSONObject(descResp.body?.string().orEmpty()).optInt("code", -1) == 200 }.getOrDefault(false)
             }
-            nameOk
+            nameOk && descOk
         } catch (e: Exception) {
             Log.e("PlaylistApi", "updatePlaylistInfo failed: ${e.message}", e)
             false
